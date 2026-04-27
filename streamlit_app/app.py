@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DEFAULT_API = os.getenv("I2M_653_API_BASE", "http://127.0.0.1:8000").rstrip("/")
+BACKEND_URL = st.secrets["BACKEND_URL"].rstrip("/")
 DEFAULT_TIMEOUT = int(os.getenv("I2M_653_HTTP_TIMEOUT", "60"))
 
 
@@ -22,7 +22,7 @@ st.title("I2M 653 필드 (자유주제어) 테스트")
 st.caption("데이터 수집(알라딘) → 전처리 → GPT 의미분석 → 키워드/ MRK 653 — 백엔드 API 연동")
 
 def post_json(path: str, body: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
-    url = f"{DEFAULT_API}{path}"
+    url = f"{BACKEND_URL}{path}"
     try:
         with httpx.Client(timeout=DEFAULT_TIMEOUT) as client:
             r = client.post(url, json=body)
