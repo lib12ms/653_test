@@ -15,6 +15,10 @@ load_dotenv()
 
 BACKEND_URL = st.secrets["BACKEND_URL"].rstrip("/")
 DEFAULT_TIMEOUT = int(os.getenv("I2M_653_HTTP_TIMEOUT", "60"))
+ANALYSIS_MODE_OPTIONS = {
+    "fast": "⚡ 빠른 모드",
+    "precise": "🎯 정밀 모드",
+}
 
 
 st.set_page_config(page_title="I2M — 653 테스트", page_icon="📚", layout="wide")
@@ -77,13 +81,28 @@ def _render_editable_653(data: dict[str, Any], key_prefix: str) -> None:
             st.code(f"{dbg.get('toc_raw','')}\n=>\n{dbg.get('toc_clean','')}", language="text")
 
 
+analysis_mode = st.radio(
+    "분석 모드",
+    options=list(ANALYSIS_MODE_OPTIONS.keys()),
+    format_func=lambda mode: ANALYSIS_MODE_OPTIONS[mode],
+    horizontal=True,
+    help="빠른 모드는 속도 우선, 정밀 모드는 정확도 우선으로 사용할 예정입니다.",
+)
+if analysis_mode == "fast":
+    st.caption("⚡ 빠른 모드: 핵심 규칙 중심으로 빠르게 생성합니다.")
+else:
+    st.caption("🎯 정밀 모드: 더 세밀한 단계 분석을 적용할 예정입니다. 응답 시간이 더 길 수 있습니다.")
+
 isbn = st.text_input("ISBN", placeholder="9788936434267")
 if st.button("653 생성 (ISBN)", type="primary", key="btn_isbn"):
     if not (isbn or "").strip():
         st.warning("ISBN을 입력하세요.")
     else:
         with st.spinner("알라딘 + GPT…"):
-            data, err = post_json("/api/field653", {"isbn": isbn.strip()})
+            data, err = post_json(
+                "/api/field653",
+                {"isbn": isbn.strip(), "analysis_mode": analysis_mode},
+            )
         if err:
             st.error(err)
         elif data:

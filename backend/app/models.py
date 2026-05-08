@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -10,6 +10,9 @@ from pydantic import BaseModel, Field, field_validator
 def normalize_isbn13(raw: str) -> str:
     s = (raw or "").strip().replace("-", "").replace(" ", "")
     return s
+
+
+AnalysisMode = Literal["fast", "precise"]
 
 
 class AladinMetadata653(BaseModel):
@@ -36,6 +39,7 @@ class NlkMetadataHint(BaseModel):
 
 class Field653FromIsbnRequest(BaseModel):
     isbn: str = Field(..., min_length=10, max_length=20, description="ISBN(하이픈 있어도 됨)")
+    analysis_mode: AnalysisMode = Field(default="fast", description="653 생성 모드")
 
     @field_validator("isbn", mode="before")
     @classmethod
@@ -54,10 +58,12 @@ class Field653FromMetadataRequest(BaseModel):
     description: str = ""
     toc: str = ""
     max_keywords: int = Field(default=7, ge=1, le=15)
+    analysis_mode: AnalysisMode = Field(default="fast", description="653 생성 모드")
 
 
 class Field653Response(BaseModel):
     success: bool = True
+    analysis_mode: AnalysisMode = "fast"
     tag_653: str | None = None
     """예: =653  \\$a키워드1$a키워드2"""
     keywords: list[str] = Field(default_factory=list)

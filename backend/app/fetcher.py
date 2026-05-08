@@ -5,6 +5,7 @@ import logging
 import re
 import xml.etree.ElementTree as ET
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from tenacity import (
@@ -26,6 +27,16 @@ from .preprocess import (
 logger = logging.getLogger(__name__)
 
 
+def _can_use_insecure_fallback(url: str, settings: Settings) -> bool:
+    if not settings.allow_insecure_ssl_fallback:
+        return False
+    allowed_hosts = settings.insecure_ssl_fallback_hosts
+    if not allowed_hosts:
+        return False
+    host = (urlparse(url).hostname or "").lower()
+    return host in allowed_hosts
+
+
 def _is_retryable(exc: BaseException) -> bool:
     if isinstance(exc, httpx.HTTPStatusError):
         return exc.response.status_code in (429, 500, 502, 503, 504)
@@ -41,24 +52,30 @@ def _is_retryable(exc: BaseException) -> bool:
     wait=wait_exponential(multiplier=0.7, min=0.7, max=8),
     retry=retry_if_exception(_is_retryable),
 )
-def _get_json(url: str, params: dict[str, Any], timeout: float) -> dict[str, Any]:
+async def _get_json(
+    url: str,
+    params: dict[str, Any],
+    timeout: float,
+    client: httpx.AsyncClient,
+    settings: Settings,
+) -> dict[str, Any]:
     headers = {
         "User-Agent": "I2M-653/1.0 (library metadata)",
         "Accept": "application/json",
     }
     try:
-        with httpx.Client() as client:
-            r = client.get(url, params=params, timeout=timeout, headers=headers)
-            r.raise_for_status()
-            return r.json()
+        r = await client.get(url, params=params, timeout=timeout, headers=headers)
+        r.raise_for_status()
+        return r.json()
     except httpx.ConnectError as e:
-        # 일부 사내/교육망 환경에서 self-signed chain으로 실패하는 경우 1회 폴백.
         emsg = str(e).lower()
         if "certificate verify failed" not in emsg and "self-signed" not in emsg:
             raise
-        logger.warning("SSL 검증 실패로 verify=False 폴백: %s", url)
-        with httpx.Client(verify=False) as client:
-            r = client.get(url, params=params, timeout=timeout, headers=headers)
+        if not _can_use_insecure_fallback(url, settings):
+            raise
+        logger.warning("SSL 검증 실패로 제한적 verify=False 폴백: %s", url)
+        async with httpx.AsyncClient(verify=False) as insecure_client:
+            r = await insecure_client.get(url, params=params, timeout=timeout, headers=headers)
             r.raise_for_status()
             return r.json()
 
@@ -69,23 +86,30 @@ def _get_json(url: str, params: dict[str, Any], timeout: float) -> dict[str, Any
     wait=wait_exponential(multiplier=0.7, min=0.7, max=8),
     retry=retry_if_exception(_is_retryable),
 )
-def _get_text(url: str, params: dict[str, Any], timeout: float) -> str:
+async def _get_text(
+    url: str,
+    params: dict[str, Any],
+    timeout: float,
+    client: httpx.AsyncClient,
+    settings: Settings,
+) -> str:
     headers = {
         "User-Agent": "I2M-653/1.0 (library metadata)",
         "Accept": "*/*",
     }
     try:
-        with httpx.Client() as client:
-            r = client.get(url, params=params, timeout=timeout, headers=headers)
-            r.raise_for_status()
-            return r.text
+        r = await client.get(url, params=params, timeout=timeout, headers=headers)
+        r.raise_for_status()
+        return r.text
     except httpx.ConnectError as e:
         emsg = str(e).lower()
         if "certificate verify failed" not in emsg and "self-signed" not in emsg:
             raise
-        logger.warning("SSL 검증 실패로 verify=False 폴백: %s", url)
-        with httpx.Client(verify=False) as client:
-            r = client.get(url, params=params, timeout=timeout, headers=headers)
+        if not _can_use_insecure_fallback(url, settings):
+            raise
+        logger.warning("SSL 검증 실패로 제한적 verify=False 폴백: %s", url)
+        async with httpx.AsyncClient(verify=False) as insecure_client:
+            r = await insecure_client.get(url, params=params, timeout=timeout, headers=headers)
             r.raise_for_status()
             return r.text
 
@@ -115,19 +139,25 @@ def _strip_html(text: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
-def _safe_fetch_page_text(url: str, timeout: float) -> str:
+async def _safe_fetch_page_text(
+    url: str,
+    timeout: float,
+    client: httpx.AsyncClient,
+    settings: Settings,
+) -> str:
     if not url:
         return ""
     try:
-        with httpx.Client() as client:
-            r = client.get(url, timeout=timeout, follow_redirects=True)
-            r.raise_for_status()
-            return _strip_html(r.text)[:5000]
+        r = await client.get(url, timeout=timeout, follow_redirects=True)
+        r.raise_for_status()
+        return _strip_html(r.text)[:5000]
     except Exception:
         pass
+    if not _can_use_insecure_fallback(url, settings):
+        return ""
     try:
-        with httpx.Client(verify=False) as client:
-            r = client.get(url, timeout=timeout, follow_redirects=True)
+        async with httpx.AsyncClient(verify=False) as insecure_client:
+            r = await insecure_client.get(url, timeout=timeout, follow_redirects=True)
             r.raise_for_status()
             return _strip_html(r.text)[:5000]
     except Exception:
@@ -156,7 +186,6 @@ def _extract_subjects(doc: dict[str, Any]) -> list[str]:
 
 
 def _parse_nlk_json(raw: dict[str, Any]) -> NlkMetadataHint:
-    # 응답 스키마 편차가 있어 다양한 키를 흡수한다.
     docs = raw.get("result") or raw.get("docs") or raw.get("doc") or raw.get("item")
     if isinstance(docs, list) and docs:
         doc = docs[0] if isinstance(docs[0], dict) else {}
@@ -194,10 +223,10 @@ def _parse_nlk_xml(xml_text: str) -> NlkMetadataHint:
 
     seen: set[str] = set()
     uniq: list[str] = []
-    for s in subjects:
-        if s not in seen:
-            seen.add(s)
-            uniq.append(s)
+    for sub in subjects:
+        if sub not in seen:
+            seen.add(sub)
+            uniq.append(sub)
 
     return NlkMetadataHint(
         class_no=pick("kdc", "classNo", "classification"),
@@ -210,9 +239,10 @@ def _parse_nlk_xml(xml_text: str) -> NlkMetadataHint:
     )
 
 
-def fetch_nlk_hint_by_isbn(
+async def fetch_nlk_hint_by_isbn(
     isbn: str,
     settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
 ) -> NlkMetadataHint:
     s = get_settings() if settings is None else settings
     isbn13 = normalize_isbn13(isbn)
@@ -225,57 +255,84 @@ def fetch_nlk_hint_by_isbn(
         "pageNum": 1,
         "pageSize": 1,
     }
-
-    # JSON 우선 시도
+    req_client = client or httpx.AsyncClient()
+    owns_client = client is None
     try:
-        raw_json = _get_json(
-            s.nlk_api_url,
-            {**params, "apiType": "json"},
-            timeout=s.request_timeout_s,
-        )
-        parsed = _parse_nlk_json(raw_json)
-        # URL형 필드는 본문을 따라가서 텍스트로 보강한다.
-        if not parsed.toc and parsed.book_tb_cnt_url:
-            parsed.toc = clean_toc_for_ai(
-                _safe_fetch_page_text(parsed.book_tb_cnt_url, timeout=s.request_timeout_s)
+        try:
+            raw_json = await _get_json(
+                s.nlk_api_url,
+                {**params, "apiType": "json"},
+                timeout=s.request_timeout_s,
+                client=req_client,
+                settings=s,
             )
-        else:
-            parsed.toc = clean_toc_for_ai(parsed.toc)
-        if not parsed.description and parsed.book_intro_url:
-            parsed.description = _safe_fetch_page_text(parsed.book_intro_url, timeout=s.request_timeout_s)
-        parsed.description = clean_description_for_ai(parsed.description)
-        if parsed.class_no or parsed.kwd or parsed.subjects or parsed.description or parsed.toc:
+            parsed = _parse_nlk_json(raw_json)
+            if not parsed.toc and parsed.book_tb_cnt_url:
+                parsed.toc = clean_toc_for_ai(
+                    await _safe_fetch_page_text(
+                        parsed.book_tb_cnt_url,
+                        timeout=s.request_timeout_s,
+                        client=req_client,
+                        settings=s,
+                    )
+                )
+            else:
+                parsed.toc = clean_toc_for_ai(parsed.toc)
+            if not parsed.description and parsed.book_intro_url:
+                parsed.description = await _safe_fetch_page_text(
+                    parsed.book_intro_url,
+                    timeout=s.request_timeout_s,
+                    client=req_client,
+                    settings=s,
+                )
+            parsed.description = clean_description_for_ai(parsed.description)
+            if parsed.class_no or parsed.kwd or parsed.subjects or parsed.description or parsed.toc:
+                return parsed
+        except Exception:
+            logger.info("NLK JSON 파싱 실패, XML로 재시도")
+
+        try:
+            raw_xml = await _get_text(
+                s.nlk_api_url,
+                {**params, "apiType": "xml"},
+                timeout=s.request_timeout_s,
+                client=req_client,
+                settings=s,
+            )
+            parsed = _parse_nlk_xml(raw_xml)
+            if not parsed.toc and parsed.book_tb_cnt_url:
+                parsed.toc = clean_toc_for_ai(
+                    await _safe_fetch_page_text(
+                        parsed.book_tb_cnt_url,
+                        timeout=s.request_timeout_s,
+                        client=req_client,
+                        settings=s,
+                    )
+                )
+            else:
+                parsed.toc = clean_toc_for_ai(parsed.toc)
+            if not parsed.description and parsed.book_intro_url:
+                parsed.description = await _safe_fetch_page_text(
+                    parsed.book_intro_url,
+                    timeout=s.request_timeout_s,
+                    client=req_client,
+                    settings=s,
+                )
+            parsed.description = clean_description_for_ai(parsed.description)
             return parsed
-    except Exception:
-        logger.info("NLK JSON 파싱 실패, XML로 재시도")
-
-    # XML 백업
-    try:
-        raw_xml = _get_text(
-            s.nlk_api_url,
-            {**params, "apiType": "xml"},
-            timeout=s.request_timeout_s,
-        )
-        parsed = _parse_nlk_xml(raw_xml)
-        if not parsed.toc and parsed.book_tb_cnt_url:
-            parsed.toc = clean_toc_for_ai(
-                _safe_fetch_page_text(parsed.book_tb_cnt_url, timeout=s.request_timeout_s)
-            )
-        else:
-            parsed.toc = clean_toc_for_ai(parsed.toc)
-        if not parsed.description and parsed.book_intro_url:
-            parsed.description = _safe_fetch_page_text(parsed.book_intro_url, timeout=s.request_timeout_s)
-        parsed.description = clean_description_for_ai(parsed.description)
-        return parsed
-    except Exception as e:
-        logger.warning("NLK 조회 실패: %s", e)
-        return NlkMetadataHint()
+        except Exception as e:
+            logger.warning("NLK 조회 실패: %s", e)
+            return NlkMetadataHint()
+    finally:
+        if owns_client:
+            await req_client.aclose()
 
 
-def fetch_aladin_for_653(
+async def fetch_aladin_for_653(
     isbn: str,
     settings: Settings | None = None,
     include_debug: bool = False,
+    client: httpx.AsyncClient | None = None,
 ) -> AladinMetadata653 | tuple[AladinMetadata653, dict[str, str]]:
     """
     ItemLookUp으로 분류/서명/저자/설명/목차를 가져온 뒤 AladinMetadata653로 반환.
@@ -295,11 +352,20 @@ def fetch_aladin_for_653(
         "Version": "20131101",
         "OptResult": "Toc,authors,fulldescription",
     }
-    data = _get_json(
-        s.aladin_item_lookup_url,
-        params,
-        timeout=s.request_timeout_s,
-    )
+    req_client = client or httpx.AsyncClient()
+    owns_client = client is None
+    try:
+        data = await _get_json(
+            s.aladin_item_lookup_url,
+            params,
+            timeout=s.request_timeout_s,
+            client=req_client,
+            settings=s,
+        )
+    finally:
+        if owns_client:
+            await req_client.aclose()
+
     item_list = data.get("item")
     if not item_list or not isinstance(item_list, list):
         raise ValueError("알라딘 API에서 도서를 찾지 못했습니다.")
@@ -382,7 +448,8 @@ def merge_aladin_with_nlk(
         subj_hint = " ".join(nlk.subjects[:8])
         if subj_hint and subj_hint not in merged_toc:
             merged_toc = f"{merged_toc}\n주제어힌트:{subj_hint}".strip() if merged_toc else f"주제어힌트:{subj_hint}"
-    if nlk.kwd and nlk.kwd not in merged_toc:
+    kwd_norm = re.sub(r"[-\s]", "", nlk.kwd or "")
+    if nlk.kwd and not kwd_norm.isdigit() and nlk.kwd not in merged_toc:
         merged_toc = f"{merged_toc}\nNLK키워드:{nlk.kwd}".strip() if merged_toc else f"NLK키워드:{nlk.kwd}"
     if nlk.book_tb_cnt_url and nlk.book_tb_cnt_url not in merged_toc:
         merged_toc = (

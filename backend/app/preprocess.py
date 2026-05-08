@@ -2,6 +2,21 @@
 import re
 import unicodedata
 
+TITLE_DERIVED_ALLOWED_KEYWORDS = {
+    "ai글쓰기",
+    "생성형ai",
+    "저작권",
+    "창작윤리",
+    "콘텐츠창작",
+    "제미나이",
+    "구글ai",
+    "구글워크스페이스",
+    "노트북lm",
+    "딥리서치",
+    "ai코딩",
+    "인공지능도구",
+}
+
 
 def norm_text(text: str) -> str:
     if not text:
@@ -131,10 +146,16 @@ def build_forbidden_set(title: str, authors: str) -> set[str]:
 
 def should_keep_keyword(kw: str, forbidden: set[str]) -> bool:
     n = norm_text(kw)
-    if not n or len(n.replace(" ", "")) < 2:
+    compact = n.replace(" ", "")
+    if not n or len(compact) < 2:
         return False
+    if compact in TITLE_DERIVED_ALLOWED_KEYWORDS:
+        return True
     for tok in forbidden:
-        if tok in n or n in tok:
+        tok_compact = tok.replace(" ", "")
+        if compact == tok_compact or compact in tok_compact:
+            return False
+        if len(tok_compact) >= 3 and tok_compact in compact:
             return False
     return True
 
