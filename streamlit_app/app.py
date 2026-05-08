@@ -23,7 +23,6 @@ ANALYSIS_MODE_OPTIONS = {
 
 st.set_page_config(page_title="I2M — 653 테스트", page_icon="📚", layout="wide")
 st.title("I2M 653 필드 (자유주제어) 테스트")
-st.caption("데이터 수집(알라딘) → 전처리 → GPT 의미분석 → 키워드/ MRK 653 — 백엔드 API 연동")
 
 def post_json(path: str, body: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
     url = f"{BACKEND_URL}{path}"
