@@ -15,6 +15,7 @@ from . import ai_service
 from .config import get_settings
 from .fetcher import fetch_aladin_for_653, fetch_nlk_hint_by_isbn, merge_aladin_with_nlk
 from .models import (
+    AnalysisMode,
     AladinMetadata653,
     Field653FromIsbnRequest,
     Field653FromMetadataRequest,
@@ -90,6 +91,7 @@ async def _build_response_from_meta(
     meta: AladinMetadata653,
     max_kw: int,
     min_kw: int,
+    analysis_mode: AnalysisMode,
     nlk_hint: NlkMetadataHint | None = None,
     preprocess_debug: dict[str, str] | None = None,
     client: httpx.AsyncClient | None = None,
@@ -98,11 +100,13 @@ async def _build_response_from_meta(
         meta,
         max_keywords=max_kw,
         min_keywords=min_kw,
+        analysis_mode=analysis_mode,
         client=client,
     )
     if err or not raw_line:
         return Field653Response(
             success=False,
+            analysis_mode=analysis_mode,
             error=err or "653 생성 실패",
             token_usage=token_usage,
             aladin=meta,
@@ -113,6 +117,7 @@ async def _build_response_from_meta(
     kws = parse_653_keywords(tag)
     return Field653Response(
         success=True,
+        analysis_mode=analysis_mode,
         tag_653=tag,
         keywords=kws,
         raw_keyword_line=raw_line,
@@ -130,7 +135,7 @@ async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
     http_client: httpx.AsyncClient = app.state.http_client
     cache: _TtlCache = app.state.isbn_cache
     cache_key = (
-        f"{req.isbn.strip()}|{s.openai_model}|"
+        f"{req.isbn.strip()}|{req.analysis_mode}|{s.openai_model}|"
         f"{s.max_keywords_653}|{s.min_keywords_653}"
     )
     cached = cache.get(cache_key)
@@ -154,6 +159,7 @@ async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
         meta,
         s.max_keywords_653,
         s.min_keywords_653,
+        req.analysis_mode,
         nlk_hint=nlk_hint,
         preprocess_debug=preprocess_debug,
         client=http_client,
@@ -179,5 +185,6 @@ async def field653_from_metadata(req: Field653FromMetadataRequest) -> Field653Re
         meta,
         req.max_keywords,
         min(s.min_keywords_653, req.max_keywords),
+        req.analysis_mode,
         client=http_client,
     )

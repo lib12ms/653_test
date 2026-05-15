@@ -15,7 +15,7 @@ from tenacity import (
 )
 
 from .config import Settings, get_settings
-from .models import AladinMetadata653, TokenUsage
+from .models import AladinMetadata653, AnalysisMode, TokenUsage
 from .preprocess import (
     build_forbidden_set,
     clean_author_str,
@@ -319,6 +319,7 @@ def _system_and_user_messages(
     description: str,
     toc: str,
     max_keywords: int,
+    analysis_mode: AnalysisMode,
 ) -> tuple[dict[str, str], dict[str, str]]:
     parts = [p.strip() for p in (category or "").split(">") if p.strip()]
     cat_tail = " ".join(parts[-2:]) if len(parts) >= 2 else (parts[-1] if parts else "")
@@ -328,14 +329,22 @@ def _system_and_user_messages(
     category_group = get_category_group(category)
     category_prompt = get_category_prompt(category)
 
-    mode_prompt = (
-        "분류 꼬리·설명·목차에서 핵심 주제를 선별하세요.\n"
-        "- 형식: 2~6글자 복합명사, 붙여쓰기(공백 없음), 의미 중복은 대표어 1개로\n"
-        "- 제외: 제목·저자 유래어(기술서 도구명은 핵심 검색어이므로 허용), 출판·유통 표현, 기능 약한 일반어(연구·개론·방법·이론 등), 국가명+문학장르 복합어(한국문학·한국소설·일본소설 등)\n"
-        "- 치환: 추상·메타어(의의·현황·동향 등)는 구체 하위개념으로. 문학: '한국소설' → '성장소설·심리소설', '한국시' → '현대시·서정시'\n"
-        "- 정보 부족(목차·설명이 짧거나 없음) 시 분류 꼬리를 기반으로 주제를 추론해 최소 5개를 채우세요\n"
-        f"- 중복 없이 최소 5개, 최대 {max_keywords}개\n"
-    )
+    if analysis_mode == "precise":
+        mode_prompt = (
+            "정밀 모드: 아래 5단계를 내부적으로만 수행하고 최종 결과만 출력하세요.\n\n"
+            "[1단계: 입력 분석] 분류 체인·꼬리, 제목, 저자, 설명, 목차를 종합해 핵심 주제 후보를 도출합니다. 정보 부족 시 분류 꼬리를 기반으로 삼습니다.\n\n"
+            "[2단계: 필터링] 제외: 제목·저자 유래어(단, 주제 필수 시 구체 하위개념 치환으로 최대 1~2개 허용), 출판·유통 표현(베스트셀러·신간·단행본 등), 기능 약한 일반어(연구·개론·방법·이론 등), 한 글자·숫자·특수문자 토큰, 국가명+문학장르 복합어(한국문학·한국소설·한국시·한국에세이·일본소설·영미소설 등 — 이런 분류어는 독자 검색 주제어가 아님)\n\n"
+            "[3단계: 분야 특화 치환] 추상·메타 표현(의의·현황·동향·배경·개요 등)은 실제 내용의 구체 하위개념으로 반드시 치환합니다. 카테고리별 지침 우선 적용, 인접 분야 확산 금지. 문학 분야에서 국가+장르 대신 구체 하위장르·주제를 사용하세요 (예: '한국소설' → '성장소설', '장편소설', '심리소설'; '한국시' → '현대시', '서정시', '시적언어').\n\n"
+            "[4단계: 형식 최적화] 2~6글자 복합명사 우선, 붙여쓰기(공백 없음), 형용사+명사 자연어 문구 금지, 의미 중복은 대표어 1개로 정리.\n\n"
+            f"[5단계: 최종 확정] 관련성·구체성·비중복성·균형 기준으로 최대 {max_keywords}개 선정.\n"
+        )
+    else:
+        mode_prompt = (
+            "빠른 모드: 분류 꼬리·설명·목차에서 핵심 주제를 직접 선별하세요.\n"
+            "- 2~6글자 복합명사, 붙여쓰기, 도서관 이용자가 검색할 구체적 표현\n"
+            "- 제목·저자 유래어, 출판 관련어, 국가명+문학장르 복합어(한국문학·일본소설 등) 제외; 추상어는 구체 하위개념으로 치환\n"
+            f"- 중복 없이 최대 {max_keywords}개\n"
+        )
 
     system_msg = {
         "role": "system",
@@ -363,7 +372,7 @@ def _system_and_user_messages(
             f"- 목차: \"{toc}\"\n"
             f"- 제외어 목록: {forbidden_list}\n\n"
             f"### 작업 지시\n"
-            f"카테고리별 지침을 적용해 653 주제어를 생성하세요.\n"
+            f"{analysis_mode} 모드와 카테고리별 지침을 적용해 653 주제어를 생성하세요.\n"
             f"- 목표 개수: 최소 5개, 최대 {max_keywords}개\n"
             f"- 결과: `$a키워드1 $a키워드2 ...` 한 줄"
         ),
@@ -521,6 +530,7 @@ async def generate_653_subfield_line(
     meta: AladinMetadata653,
     max_keywords: int = 7,
     min_keywords: int = 5,
+    analysis_mode: AnalysisMode = "fast",
     settings: Settings | None = None,
     client: httpx.AsyncClient | None = None,
 ) -> tuple[str | None, str | None, TokenUsage | None]:
@@ -539,9 +549,10 @@ async def generate_653_subfield_line(
     toc = meta.toc
 
     sys_m, user_m = _system_and_user_messages(
-        category, title, authors, description, toc, max_keywords
+        category, title, authors, description, toc, max_keywords, analysis_mode
     )
     try:
+        max_tokens = 220 if analysis_mode == "precise" else 180
         raw, usage = await _openai_chat_completions(
             s.openai_api_key,
             s.openai_base_url,
@@ -550,7 +561,7 @@ async def generate_653_subfield_line(
             settings=s,
             client=client,
             temperature=0.2,
-            max_tokens=200,
+            max_tokens=max_tokens,
             timeout=60.0,
         )
     except Exception as e:

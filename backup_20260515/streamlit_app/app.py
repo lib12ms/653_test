@@ -16,6 +16,11 @@ load_dotenv()
 
 BACKEND_URL = st.secrets["BACKEND_URL"].rstrip("/")
 DEFAULT_TIMEOUT = int(os.getenv("I2M_653_HTTP_TIMEOUT", "60"))
+ANALYSIS_MODE_OPTIONS = {
+    "fast": "⚡ 빠른 모드",
+    "precise": "🎯 정밀 모드",
+}
+
 st.set_page_config(page_title="I2M — 653", page_icon="📚", layout="wide")
 st.title("I2M 653 필드 (자유주제어)")
 
@@ -106,6 +111,17 @@ tab_single, tab_batch = st.tabs(["단건 조회", "배치 처리"])
 
 # ── 탭 1: 단건 ───────────────────────────────────────────────────────────────
 with tab_single:
+    analysis_mode = st.radio(
+        "분석 모드",
+        options=list(ANALYSIS_MODE_OPTIONS.keys()),
+        format_func=lambda m: ANALYSIS_MODE_OPTIONS[m],
+        horizontal=True,
+    )
+    if analysis_mode == "fast":
+        st.caption("⚡ 빠른 모드: 핵심 규칙 중심으로 빠르게 생성합니다.")
+    else:
+        st.caption("🎯 정밀 모드: 5단계 CoT 분석 적용. 품질 우선, 응답 시간이 다소 길 수 있습니다.")
+
     isbn = st.text_input("ISBN", placeholder="9788936434267")
     if st.button("653 생성", type="primary", key="btn_isbn"):
         if not (isbn or "").strip():
@@ -114,7 +130,7 @@ with tab_single:
             with st.spinner("알라딘·NLK 수집 → GPT 분석…"):
                 data, err = post_json(
                     "/api/field653",
-                    {"isbn": isbn.strip()},
+                    {"isbn": isbn.strip(), "analysis_mode": analysis_mode},
                 )
             if err:
                 st.error(err)
@@ -131,6 +147,14 @@ with tab_single:
 # ── 탭 2: 배치 ───────────────────────────────────────────────────────────────
 with tab_batch:
     st.markdown("ISBN을 한 줄에 하나씩 입력하세요. 처리 후 CSV를 다운로드할 수 있습니다.")
+
+    batch_mode = st.radio(
+        "분석 모드",
+        options=list(ANALYSIS_MODE_OPTIONS.keys()),
+        format_func=lambda m: ANALYSIS_MODE_OPTIONS[m],
+        horizontal=True,
+        key="batch_mode",
+    )
 
     isbn_text = st.text_area(
         "ISBN 목록",
@@ -151,7 +175,7 @@ with tab_batch:
                 status_area.text(f"[{i + 1}/{len(isbn_list)}] {isbn_item} 처리 중…")
                 data, err = post_json(
                     "/api/field653",
-                    {"isbn": isbn_item},
+                    {"isbn": isbn_item, "analysis_mode": batch_mode},
                 )
                 aladin = (data or {}).get("aladin") or {}
                 results.append({

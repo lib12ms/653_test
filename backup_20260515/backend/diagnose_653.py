@@ -114,11 +114,12 @@ async def diagnose_isbn(
         result["nlk_desc_added"] = result["desc_merged_len"] > result["desc_raw_len"]
         result["data_richness"] = result["toc_merged_len"] + result["desc_merged_len"]
 
-        # 4. 653 생성
+        # 4. 653 생성 (precise 모드 — 최대 성능)
         raw_line, err, _usage = await ai_service.generate_653_subfield_line(
             meta,
             max_keywords=settings.max_keywords_653,
             min_keywords=settings.min_keywords_653,
+            analysis_mode="precise",
             settings=settings,
             client=client,
         )
@@ -295,7 +296,7 @@ async def main() -> None:
         insecure_ssl_fallback_hosts_csv="www.aladin.co.kr",
     )
 
-    print(f"진단 시작: {len(TEST_BOOKS)}권 | 최소 키워드: {settings.min_keywords_653}개")
+    print(f"진단 시작: {len(TEST_BOOKS)}권 | 모드: precise | 최소 키워드: {settings.min_keywords_653}개")
     print("(OpenAI API 호출이 포함되어 약 1~2분 소요됩니다)\n")
 
     # 로컬 진단 전용: 네트워크 SSL 인터셉션 환경에서 전체 우회

@@ -108,6 +108,7 @@ async def process_isbn(
                 meta,
                 max_keywords=settings.max_keywords_653,
                 min_keywords=settings.min_keywords_653,
+                analysis_mode="precise",
                 settings=settings,
                 client=client,
             )
@@ -151,7 +152,7 @@ async def main() -> None:
         insecure_ssl_fallback_hosts_csv="www.aladin.co.kr",
     )
     total = len(ISBNS)
-    print(f"배치 653 생성 시작: {total}권 | 동시처리: {CONCURRENCY}건")
+    print(f"배치 653 생성 시작: {total}권 | 모드: precise | 동시처리: {CONCURRENCY}건")
     print("(OpenAI API 호출 포함 - 약 3~5분 소요 예상)\n")
 
     sem = asyncio.Semaphore(CONCURRENCY)
