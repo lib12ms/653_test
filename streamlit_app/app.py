@@ -18,9 +18,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 _root = Path(__file__).resolve().parents[1]
-_kit = _root / "0516test"
+_here = Path(__file__).resolve().parent
 _backend = _root / "backend"
-for _p in (_kit, _backend):
+for _p in (_here, _backend):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
