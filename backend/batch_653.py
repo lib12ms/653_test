@@ -26,7 +26,7 @@ import httpx
 from app import ai_service
 from app.ai_service import build_marc_653_line
 from app.config import Settings
-from app.fetcher import fetch_aladin_for_653, fetch_nlk_hint_by_isbn, merge_aladin_with_nlk
+from app.fetcher import fetch_aladin_for_653, fetch_secondary_metadata_hint, merge_aladin_with_nlk
 from app.models import parse_653_keywords
 
 # ── ISBN 목록 ─────────────────────────────────────────────────────────────
@@ -101,8 +101,9 @@ async def process_isbn(
             result["저자"] = base_meta.authors
             result["카테고리"] = base_meta.category
 
-            nlk = await fetch_nlk_hint_by_isbn(isbn, settings=settings, client=client)
-            meta = merge_aladin_with_nlk(base_meta, nlk, settings=settings)
+            nlk, hint_src = await fetch_secondary_metadata_hint(isbn, settings=settings, client=client)
+            merge_src = "kpipa" if hint_src == "kpipa" else "none"
+            meta = merge_aladin_with_nlk(base_meta, nlk, settings=settings, secondary_source=merge_src)
 
             raw_line, err, _usage = await ai_service.generate_653_subfield_line(
                 meta,

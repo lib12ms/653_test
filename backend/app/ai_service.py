@@ -134,10 +134,34 @@ CATEGORY_MAP = {
     "좋은부모": "기타",
 }
 
+# 단순 장르명 필터 — 한정어 없이 장르만 단독으로 쓰인 경우 (예: 에세이, 소설, 희곡)
+# 한정어가 붙은 복합어(성장소설, 현대시, 추리소설 등)는 해당하지 않음
+_PURE_GENRE_LABELS = frozenset({
+    "에세이", "수필", "산문",
+    "소설", "희곡",
+    "동화", "만화", "웹툰",
+    "시집", "소설집", "산문집", "에세이집", "단편집", "수필집",
+    "그림책", "동시집", "시화집",
+})
+
 # 국가명+문학장르 복합어 필터 (예: 한국문학, 일본소설, 영미소설)
 _COUNTRY_GENRE_RE = re.compile(
     r"^(한국|일본|영미|중국|프랑스|독일|러시아|미국|영국|스페인|이탈리아|북유럽)"
     r"(문학|소설|에세이|시|희곡|단편소설|장편소설|수필|동화|산문|시집|소설집|산문집|문예|시문학)$"
+)
+
+# 국가+장르만 덧붙인 형태 (예: 현대한국소설, 당대일본문학) — 이용자 검색어로는 너무 넓음
+_EXTENDED_COUNTRY_GENRE_RE = re.compile(
+    r"^(현대|당대|근대)?"
+    r"(한국|일본|영미|중국|미국|영국|프랑스|독일|러시아|스페인|이탈리아|북유럽)"
+    r"(소설|시|희곡|문학|에세이|수필|산문)$"
+)
+
+# 문학·서사 비평·메타 표현 — 이용자 검색 키워드로는 효용이 낮은 편
+_LITERATURE_META_RE = re.compile(
+    r"(문학적|비평적|미학적|서사적)(조각|형상|탐구|사유|분석|읽기)$"
+    r"|^(감정|정서|내적|심리)서사$"
+    r"|^(언어|담론|서사|비평)(탐구|분석|구조|전략)$"
 )
 
 LOW_VALUE_KEYWORDS = {
@@ -165,9 +189,18 @@ LOW_VALUE_KEYWORDS = {
     "nlk키워드",
     "nlk목차url",
     "nlk소개url",
+    "kpipa키워드",
+    "kpipa목차url",
+    "kpipa소개url",
     "국립중앙도서관kdc",
     "핵심도구",
     "구글계정생성",
+    # 평론·메타어 변형 (모델 출력 누락 대비 명시 차단)
+    "문학적조각",
+    "감정서사",
+    "언어탐구",
+    "서사구조",
+    "서사전략",
 }
 
 CONTENT_FORMAT_TOKENS = ("팁", "비결", "상식", "추천", "모음")
@@ -229,6 +262,12 @@ def _is_low_value_keyword(normalized_keyword: str, category_group: str = "") -> 
     if any(compact.endswith(suffix) for suffix in LOW_VALUE_SUFFIXES):
         return True
     if _COUNTRY_GENRE_RE.match(compact):
+        return True
+    if _EXTENDED_COUNTRY_GENRE_RE.match(compact):
+        return True
+    if category_group == "문학" and _LITERATURE_META_RE.search(compact):
+        return True
+    if compact in _PURE_GENRE_LABELS:
         return True
     return False
 
@@ -330,24 +369,48 @@ def _system_and_user_messages(
 
     mode_prompt = (
         "분류 꼬리·설명·목차에서 핵심 주제를 선별하세요.\n"
+        "- 목적(653 역할): 도서관 홈페이지·목록에서 이용자가 도서를 찾을 때 검색창에 실제로 입력할 법한 구체 소재어만 제시하세요. "
+        "(온라인 공개목록·통합검색에서 쓰는 일반적인 도서 검색을 가정합니다.)\n"
+        "책의 내용·배경·주제·기법·인물군·시대·장소·갈등 등을 드러내는 명사형 검색어를 우선합니다.\n"
         "- 형식: 2~6글자 복합명사, 붙여쓰기(공백 없음), 의미 중복은 대표어 1개로\n"
-        "- 제외: 제목·저자 유래어(기술서 도구명은 핵심 검색어이므로 허용), 출판·유통 표현, 기능 약한 일반어(연구·개론·방법·이론 등), 국가명+문학장르 복합어(한국문학·한국소설·일본소설 등)\n"
-        "- 치환: 추상·메타어(의의·현황·동향 등)는 구체 하위개념으로. 문학: '한국소설' → '성장소설·심리소설', '한국시' → '현대시·서정시'\n"
-        "- 정보 부족(목차·설명이 짧거나 없음) 시 분류 꼬리를 기반으로 주제를 추론해 최소 5개를 채우세요\n"
+        "- 제외: 제목·저자 유래어(기술서 도구명은 핵심 검색어이므로 허용), 출판·유통 표현, 기능 약한 일반어(연구·개론·방법·이론 등)\n"
+        "- 제외(국가+문학장르 한 단어): 한국문학·일본소설·영미소설 등 국가명 직접 결합형\n"
+        "- 제외(시대어+국가+장르 한 단어): 앞에 현대·당대·근대 중 하나가 붙고, "
+        "중간에 한국·일본·영미·중국·미국·영국·프랑스·독일·러시아·스페인·이탈리아·북유럽 등이 오며, "
+        "끝이 소설·시·희곡·문학·에세이·수필·산문으로 끝나는 결합어 전부. "
+        "예: 현대한국소설, 당대일본문학, 근대영국소설 — 검색 범위만 넓어지므로 넣지 말고, 성장소설·심리소설·도시소설·서정시 등으로 치환\n"
+        "- 제외: 한정어 없는 단순 장르명(에세이·소설·희곡·수필·동화·만화 등). "
+        "성장소설·추리소설·현대시처럼 한정어가 붙은 복합어는 허용\n"
+        "- 치환: 추상·메타어(의의·현황·동향 등)는 구체 하위개념으로. "
+        "문학에서 '한국소설'·'현대한국소설'류 → 성장소설·심리소설·도시소설 등, '한국시' → 서정시·시어·서사시 등\n"
+        "- 정보 부족 시에도 상위 장르·국가만 덧붙여 개수를 채우지 말고, 분류·텍스트에서 유추 가능한 구체 주제를 우선\n"
         f"- 중복 없이 최소 5개, 최대 {max_keywords}개\n"
     )
+
+    literature_prompt = ""
+    if category_group == "문학":
+        literature_prompt = (
+            "\n[문학 그룹 전용 — 이용자 도서 검색용 소재어]\n"
+            "- 문학 도서는 비평·서사이론형 메타 표현을 키워드로 쓰지 마세요. "
+            "이용자가 검색창에 치기 어렵고, 작품 소재를 직접 가리키지도 않습니다.\n"
+            "- 금지 꼴(예시, 이 패턴에 해당하면 출력 금지): "
+            "문학적/비평적/미학적/서사적 + 조각·형상·탐구·사유·분석·읽기; "
+            "감정서사·정서서사·내적서사·심리서사; "
+            "언어탐구·담론탐구·서사탐구·비평탐구·서사구조·서사전략·담론분석 등\n"
+            "- 대신 작품에서 읽히는 구체 소재·배경·주제·기법(예: 식민지, 성장, 가족, 전쟁, 도시, 서정, 시점, 화자, 여성, 일상 등)을 명사형으로 선택하세요.\n"
+        )
 
     system_msg = {
         "role": "system",
         "content": (
             "당신은 KORMARC 작성 경험이 풍부한 도서관 메타데이터 전문가입니다.\n"
             "주어진 도서 정보를 바탕으로 MARC 653 자유주제어를 생성하세요.\n\n"
-            f"{mode_prompt}\n"
+            f"{mode_prompt}{literature_prompt}\n"
             f"카테고리 그룹: {category_group}\n"
             f"[카테고리별 지침]\n{category_prompt}\n"
             "출력: `$a키워드1 $a키워드2 ...` 한 줄만, 사고 과정 없이 최종 결과만\n"
             "- 상위 분류명(건강·취미 등)은 구체 하위개념으로 치환\n"
-            "- 유효 키워드 부족 시 분류 꼬리 기반 명사를 1~3개라도 출력\n\n"
+            "- 유효 키워드 부족 시에도 ‘OO문학·OO소설’ 식 넓은 장르명만으로 채우지 말 것\n\n"
             "출력 예시: '$a정서조절 $a성장소설' (쉼표·번호·설명문 금지)"
         ),
     }
@@ -417,6 +480,7 @@ _GENRE_FALLBACKS: dict[str, list[str]] = {
 
 def _extract_category_candidates(category: str) -> list[str]:
     """분류 체인의 구체 하위 분야명을 보강 후보로 사용한다."""
+    category_group = get_category_group(category)
     candidates: list[str] = []
     for part in reversed([p.strip() for p in (category or "").split(">") if p.strip()]):
         if "국립중앙도서관" in part or "kdc" in norm_text(part):
@@ -429,7 +493,7 @@ def _extract_category_candidates(category: str) -> list[str]:
             continue
         if n in CATEGORY_CANDIDATE_DENY:
             continue
-        if _is_low_value_keyword(n):
+        if _is_low_value_keyword(n, category_group):
             continue
         candidates.append(token)
 

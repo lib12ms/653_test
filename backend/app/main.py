@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import ai_service
 from .config import get_settings
-from .fetcher import fetch_aladin_for_653, fetch_nlk_hint_by_isbn, merge_aladin_with_nlk
+from .fetcher import fetch_aladin_for_653, fetch_secondary_metadata_hint, merge_aladin_with_nlk
 from .models import (
     AladinMetadata653,
     Field653FromIsbnRequest,
@@ -93,6 +93,7 @@ async def _build_response_from_meta(
     nlk_hint: NlkMetadataHint | None = None,
     preprocess_debug: dict[str, str] | None = None,
     client: httpx.AsyncClient | None = None,
+    hint_source: str | None = None,
 ) -> Field653Response:
     raw_line, err, token_usage = await ai_service.generate_653_subfield_line(
         meta,
@@ -107,6 +108,7 @@ async def _build_response_from_meta(
             token_usage=token_usage,
             aladin=meta,
             nlk_hint=nlk_hint,
+            hint_source=hint_source,
             preprocess_debug=preprocess_debug,
         )
     tag = ai_service.build_marc_653_line(raw_line)
@@ -119,19 +121,21 @@ async def _build_response_from_meta(
         token_usage=token_usage,
         aladin=meta,
         nlk_hint=nlk_hint,
+        hint_source=hint_source,
         preprocess_debug=preprocess_debug,
     )
 
 
 @app.post("/api/field653", response_model=Field653Response)
 async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
-    """ISBN → 알라딘(+NLK 보강) 메타 수집 → 653."""
+    """ISBN → 알라딘(주) + KPIPA 목차(선택) → 653."""
     s = get_settings()
     http_client: httpx.AsyncClient = app.state.http_client
     cache: _TtlCache = app.state.isbn_cache
     cache_key = (
         f"{req.isbn.strip()}|{s.openai_model}|"
-        f"{s.max_keywords_653}|{s.min_keywords_653}"
+        f"{s.max_keywords_653}|{s.min_keywords_653}|"
+        f"k{int(bool(s.kpipa_enable and s.kpipa_api_key))}"
     )
     cached = cache.get(cache_key)
     if cached is not None:
@@ -141,15 +145,18 @@ async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
         base_meta_task = fetch_aladin_for_653(
             req.isbn, settings=s, include_debug=True, client=http_client
         )
-        nlk_task = fetch_nlk_hint_by_isbn(req.isbn, settings=s, client=http_client)
-        (base_meta, preprocess_debug), nlk_hint = await asyncio.gather(base_meta_task, nlk_task)
+        secondary_task = fetch_secondary_metadata_hint(req.isbn, settings=s, client=http_client)
+        (base_meta, preprocess_debug), (nlk_hint, hint_src) = await asyncio.gather(
+            base_meta_task, secondary_task
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.exception("알라딘 조회")
         raise HTTPException(status_code=502, detail=f"알라딘 API 오류: {e}") from e
 
-    meta = merge_aladin_with_nlk(base_meta, nlk_hint, settings=s)
+    merge_src = "kpipa" if hint_src == "kpipa" else "none"
+    meta = merge_aladin_with_nlk(base_meta, nlk_hint, settings=s, secondary_source=merge_src)
     response = await _build_response_from_meta(
         meta,
         s.max_keywords_653,
@@ -157,6 +164,7 @@ async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
         nlk_hint=nlk_hint,
         preprocess_debug=preprocess_debug,
         client=http_client,
+        hint_source=hint_src if hint_src != "none" else None,
     )
     if response.success:
         cache.set(cache_key, response)

@@ -18,3 +18,27 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
+
+# Output / batch result files
+backend/653_배치_*.csv
+backend/653_진단_*.csv
+backend/구신비교_*.csv
+backend/모드비교_*.csv
+653_모드비교_*.xlsx
+
+# Backup files
+backend/app/*_backup_*.py
+backend/app/test/
+backend/app/test.py
+
+# Misc docs & test artifacts
+*.hwp
+*.hwpx
+*.xlsm
+*.pdf
+0516test/
+작업일지_*.md
+\# ---- 653*
+나는 I2M*
+테스트를 통한*
+backend/app/test

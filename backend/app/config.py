@@ -28,9 +28,25 @@ class Settings(BaseSettings):
     nlk_api_key: str = Field(default="", description="국립중앙도서관 OpenAPI 인증키")
     nlk_api_url: str = Field(
         default="https://www.nl.go.kr/NL/search/openApi/search.do",
-        description="국립중앙도서관 OpenAPI URL",
+        description="국립중앙도서관 소장 검색 OpenAPI URL",
     )
-    nlk_enable: bool = Field(default=True, description="NLK 보강 수집 활성화")
+    nlk_seoji_api_url: str = Field(
+        default="https://www.nl.go.kr/seoji/SearchApi.do",
+        description="국립중앙도서관 ISBN 서지(Seoji) OpenAPI URL",
+    )
+    nlk_enable: bool = Field(
+        default=False,
+        description="NLK OpenAPI(앱 본선 파이프라인에서는 미사용; probe_nlk_isbns 등 스크립트용)",
+    )
+    kpipa_api_key: str = Field(default="", description="KPIPA 출판유통통합전산망 OpenAPI 서비스키(apiKey)")
+    kpipa_api_base_url: str = Field(
+        default="https://bnk.kpipa.or.kr",
+        description="KPIPA API 베이스 URL(운영). 개발: http://49.254.92.151:8092",
+    )
+    kpipa_enable: bool = Field(
+        default=False,
+        description="KPIPA getBookDetail 호출 — ONIX 목차(TextType 04)만 알라딘 메타에 병합",
+    )
     request_timeout_s: float = 30.0
     allow_insecure_ssl_fallback: bool = Field(
         default=False,

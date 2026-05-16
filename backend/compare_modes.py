@@ -34,20 +34,24 @@ from app.ai_service import (
     parse_keyword_line,
 )
 from app.config import Settings
-from app.fetcher import fetch_aladin_for_653, fetch_nlk_hint_by_isbn, merge_aladin_with_nlk
+from app.fetcher import fetch_aladin_for_653, fetch_secondary_metadata_hint, merge_aladin_with_nlk
 from app.models import AladinMetadata653, parse_653_keywords
 from app.preprocess import build_forbidden_set, clean_author_str, should_keep_keyword
 
 # ── 비교 대상 ISBN (분야별 샘플) ────────────────────────────────────────────
 TEST_BOOKS: list[tuple[str, str]] = [
-    ("9791167376565", "겨울통 [문학/시]"),
-    ("9791199691407", ""),
-    ("9791139730937", ""),
-    ("9788959408894", ""),
-    ("9791164053605", ""),
-    ("9791199250505", ""),
-    ("9791168343849", ""),
-    ("9791199598126", ""),
+    ("9791194322276", ""),
+    ("9791167903594", ""),
+    ("9791155819104", ""),
+    ("9791192519883", ""),
+    ("9791141603373", ""),
+    ("9788960909878", ""),
+    ("9788936481285", ""),
+    ("9791189074906", ""),
+    ("9788962627008", ""),
+    ("9791199304901", ""),
+    ("9791194084334", ""),
+    ("9791194630753", ""),
 ]
 
 DELAY_S = 4  # 호출 간 딜레이 (rate limit 대응)
@@ -239,8 +243,9 @@ async def compare_isbn(
         row["category"] = base_meta.category
         row["cat_group"] = get_category_group(base_meta.category)
 
-        nlk = await fetch_nlk_hint_by_isbn(isbn, settings=settings, client=client)
-        meta = merge_aladin_with_nlk(base_meta, nlk, settings=settings)
+        nlk, hint_src = await fetch_secondary_metadata_hint(isbn, settings=settings, client=client)
+        merge_src = "kpipa" if hint_src == "kpipa" else "none"
+        meta = merge_aladin_with_nlk(base_meta, nlk, settings=settings, secondary_source=merge_src)
         row["data_richness"] = len(meta.toc) + len(meta.description)
 
         print(f"  [{idx:>2}/{total}] {label}")

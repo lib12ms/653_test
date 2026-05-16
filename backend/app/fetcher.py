@@ -186,13 +186,25 @@ def _extract_subjects(doc: dict[str, Any]) -> list[str]:
 
 
 def _parse_nlk_json(raw: dict[str, Any]) -> NlkMetadataHint:
+    if not isinstance(raw, dict):
+        return NlkMetadataHint()
+    # search.do 는 검색 결과가 없을 때 total=0 과 요청어 에코(kwd)만 주는 경우가 많음.
+    # 이때 루트 dict 를 doc 으로 쓰면 kwd=ISBN 이 키워드로 오인됨.
+    tot = raw.get("total")
+    if tot is not None:
+        try:
+            if int(str(tot).strip()) == 0:
+                return NlkMetadataHint()
+        except ValueError:
+            pass
+
     docs = raw.get("result") or raw.get("docs") or raw.get("doc") or raw.get("item")
     if isinstance(docs, list) and docs:
         doc = docs[0] if isinstance(docs[0], dict) else {}
     elif isinstance(docs, dict):
         doc = docs
     else:
-        doc = raw if isinstance(raw, dict) else {}
+        doc = {}
 
     return NlkMetadataHint(
         class_no=_first_value(doc, ("kdc", "kdcCode", "classNo", "class_no", "classification")),
@@ -239,6 +251,225 @@ def _parse_nlk_xml(xml_text: str) -> NlkMetadataHint:
     )
 
 
+def _hint_from_seoji_doc(doc: dict[str, Any]) -> NlkMetadataHint:
+    """ISBN 서지(Seoji) API docs[] 첫 행 → NlkMetadataHint."""
+    if not isinstance(doc, dict):
+        return NlkMetadataHint()
+    kdc = _to_text(doc.get("KDC") or doc.get("kdc"))
+    intro = _to_text(doc.get("BOOK_INTRODUCTION"))
+    summary = _to_text(doc.get("BOOK_SUMMARY"))
+    tb_cnt = _to_text(doc.get("BOOK_TB_CNT"))
+    parts = [p for p in (intro, summary) if p]
+    description = "\n".join(parts) if parts else ""
+    return NlkMetadataHint(
+        class_no=kdc,
+        kwd="",
+        subjects=[],
+        description=description,
+        toc=tb_cnt,
+        book_tb_cnt_url=_to_text(doc.get("BOOK_TB_CNT_URL")),
+        book_intro_url=_to_text(doc.get("BOOK_INTRODUCTION_URL")),
+    )
+
+
+async def _fetch_nlk_seoji_hint(
+    isbn13: str,
+    s: Settings,
+    client: httpx.AsyncClient,
+) -> NlkMetadataHint:
+    params: dict[str, Any] = {
+        "cert_key": s.nlk_api_key,
+        "result_style": "json",
+        "page_no": 1,
+        "page_size": 3,
+        "isbn": isbn13,
+    }
+    raw = await _get_json(
+        s.nlk_seoji_api_url,
+        params,
+        timeout=s.request_timeout_s,
+        client=client,
+        settings=s,
+    )
+    docs = raw.get("docs")
+    if not isinstance(docs, list) or not docs or not isinstance(docs[0], dict):
+        return NlkMetadataHint()
+    hint = _hint_from_seoji_doc(docs[0])
+    if not hint.toc and hint.book_tb_cnt_url:
+        hint.toc = clean_toc_for_ai(
+            await _safe_fetch_page_text(
+                hint.book_tb_cnt_url,
+                timeout=s.request_timeout_s,
+                client=client,
+                settings=s,
+            )
+        )
+    else:
+        hint.toc = clean_toc_for_ai(hint.toc)
+    if not hint.description and hint.book_intro_url:
+        hint.description = await _safe_fetch_page_text(
+            hint.book_intro_url,
+            timeout=s.request_timeout_s,
+            client=client,
+            settings=s,
+        )
+    hint.description = clean_description_for_ai(hint.description)
+    return hint
+
+
+def _nlk_hint_nonempty(h: NlkMetadataHint) -> bool:
+    return bool(
+        h.class_no
+        or h.kwd
+        or h.subjects
+        or h.description
+        or h.toc
+        or h.book_tb_cnt_url
+        or h.book_intro_url
+    )
+
+
+def _extract_kpipa_book_payload(raw: dict[str, Any]) -> dict[str, Any] | None:
+    """
+    KPIPA getBookDetail ONIX JSON에서 Product 1건 dict 추출.
+    스키마: response.body.items.Product (단일 dict 또는 배열).
+    """
+    if not isinstance(raw, dict):
+        return None
+    resp = raw.get("response")
+    if not isinstance(resp, dict):
+        return None
+    body = resp.get("body")
+    if not isinstance(body, dict):
+        return None
+    items = body.get("items")
+    if not isinstance(items, dict):
+        return None
+    prod = items.get("Product")
+    if isinstance(prod, list):
+        for p in prod:
+            if isinstance(p, dict):
+                return p
+        return None
+    if isinstance(prod, dict):
+        return prod
+    return None
+
+
+def _kpipa_collateral_text(product: dict[str, Any], text_type: str | int) -> str:
+    """ONIX CollateralDetail.TextContent에서 TextType별 본문(앱에서는 04=목차만 사용)."""
+    cd = product.get("CollateralDetail")
+    if not isinstance(cd, dict):
+        return ""
+    blocks = cd.get("TextContent")
+    if not isinstance(blocks, list):
+        return ""
+    want = str(text_type)
+    plain: list[str] = []
+    fallback: list[str] = []
+    for b in blocks:
+        if not isinstance(b, dict):
+            continue
+        if str(b.get("TextType")) != want:
+            continue
+        aud = b.get("ContentAudience")
+        aud0 = str(aud[0]) if isinstance(aud, list) and aud else ""
+        texts = b.get("Text")
+        if isinstance(texts, str):
+            text_list = [texts]
+        elif isinstance(texts, list):
+            text_list = texts
+        else:
+            text_list = []
+        merged = "\n".join(
+            t.strip() for t in text_list if isinstance(t, str) and t.strip()
+        )
+        if not merged:
+            continue
+        cleaned = _strip_html(merged) if "<" in merged else merged
+        (plain if aud0 == "02" else fallback).append(cleaned)
+    if plain:
+        return max(plain, key=len)
+    if fallback:
+        return max(fallback, key=len)
+    return ""
+
+
+def _parse_kpipa_toc_only(raw: dict[str, Any]) -> NlkMetadataHint:
+    """KPIPA ONIX Product에서 목차(TextType 04)만 추출 → 힌트의 toc만 채움."""
+    product = _extract_kpipa_book_payload(raw)
+    if not product:
+        return NlkMetadataHint()
+    toc_raw = _kpipa_collateral_text(product, "04")
+    return NlkMetadataHint(toc=clean_toc_for_ai(toc_raw))
+
+
+async def fetch_kpipa_hint_by_isbn(
+    isbn: str,
+    settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> NlkMetadataHint:
+    """KPIPA getBookDetail — 응답 중 ONIX 목차(TextContent 04)만 사용."""
+    s = get_settings() if settings is None else settings
+    isbn13 = normalize_isbn13(isbn)
+    if not isbn13 or not s.kpipa_enable or not s.kpipa_api_key:
+        return NlkMetadataHint()
+
+    base = s.kpipa_api_base_url.rstrip("/")
+    url = f"{base}/api/openApi/metaInfoSvc/getBookDetail"
+    params: dict[str, Any] = {"apiKey": s.kpipa_api_key, "isbn": isbn13}
+    req_client = client or httpx.AsyncClient()
+    owns_client = client is None
+    try:
+        raw = await _get_json(
+            url,
+            params,
+            timeout=s.request_timeout_s,
+            client=req_client,
+            settings=s,
+        )
+        if not isinstance(raw, dict):
+            return NlkMetadataHint()
+        resp = raw.get("response")
+        if isinstance(resp, dict):
+            res = resp.get("result")
+            if isinstance(res, dict):
+                code = str(res.get("resultCode", "")).upper()
+                if code and code != "INFO-000":
+                    return NlkMetadataHint()
+        return _parse_kpipa_toc_only(raw)
+    except Exception as e:
+        logger.warning("KPIPA getBookDetail 실패: %s", e)
+        return NlkMetadataHint()
+    finally:
+        if owns_client:
+            await req_client.aclose()
+
+
+async def fetch_secondary_metadata_hint(
+    isbn: str,
+    settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> tuple[NlkMetadataHint, str]:
+    """
+    알라딘 외 보강: KPIPA에서 목차만 조회(앱 본선에서 NLK 미사용).
+    반환: (힌트, 출처) — 'kpipa'(목차 있음) | 'none'.
+    """
+    s = get_settings() if settings is None else settings
+    req = client or httpx.AsyncClient()
+    owns = client is None
+    try:
+        if not (s.kpipa_enable and s.kpipa_api_key):
+            return NlkMetadataHint(), "none"
+        hint = await fetch_kpipa_hint_by_isbn(isbn, settings=s, client=req)
+        if (hint.toc or "").strip():
+            return hint, "kpipa"
+        return NlkMetadataHint(), "none"
+    finally:
+        if owns:
+            await req.aclose()
+
+
 async def fetch_nlk_hint_by_isbn(
     isbn: str,
     settings: Settings | None = None,
@@ -258,6 +489,7 @@ async def fetch_nlk_hint_by_isbn(
     req_client = client or httpx.AsyncClient()
     owns_client = client is None
     try:
+        raw_json: dict[str, Any] | None = None
         try:
             raw_json = await _get_json(
                 s.nlk_api_url,
@@ -286,10 +518,21 @@ async def fetch_nlk_hint_by_isbn(
                     settings=s,
                 )
             parsed.description = clean_description_for_ai(parsed.description)
-            if parsed.class_no or parsed.kwd or parsed.subjects or parsed.description or parsed.toc:
+            if _nlk_hint_nonempty(parsed):
                 return parsed
         except Exception:
-            logger.info("NLK JSON 파싱 실패, XML로 재시도")
+            logger.info("NLK search.do JSON 실패, XML로 재시도")
+
+        skip_xml = False
+        if isinstance(raw_json, dict):
+            t0 = raw_json.get("total")
+            if t0 is not None:
+                try:
+                    skip_xml = int(str(t0).strip()) == 0
+                except ValueError:
+                    pass
+        if skip_xml:
+            return await _fetch_nlk_seoji_hint(isbn13, s, req_client)
 
         try:
             raw_xml = await _get_text(
@@ -319,10 +562,13 @@ async def fetch_nlk_hint_by_isbn(
                     settings=s,
                 )
             parsed.description = clean_description_for_ai(parsed.description)
-            return parsed
+            if _nlk_hint_nonempty(parsed):
+                return parsed
         except Exception as e:
-            logger.warning("NLK 조회 실패: %s", e)
-            return NlkMetadataHint()
+            logger.warning("NLK search.do XML 실패: %s", e)
+
+        seoji = await _fetch_nlk_seoji_hint(isbn13, s, req_client)
+        return seoji
     finally:
         if owns_client:
             await req_client.aclose()
@@ -413,56 +659,22 @@ def merge_aladin_with_nlk(
     base: AladinMetadata653,
     nlk: NlkMetadataHint,
     settings: Settings | None = None,
+    secondary_source: str = "none",
 ) -> AladinMetadata653:
     """
-    653 생성에 필요한 텍스트를 NLK 힌트로 보강한다.
-    - 알라딘 기본값을 유지하고, 비어 있거나 약한 필드만 보수적으로 덧붙인다.
+    알라딘을 주 정보원으로 두고 보강한다.
+    - secondary_source == 'kpipa': KPIPA에서 가져온 목차(nlk.toc)만 알라딘 목차에 덧붙임.
+    - 'none': 알라딘만(전처리만).
     """
-    merged_desc = (base.description or "").strip()
-    merged_desc = clean_description_for_ai(merged_desc)
-    if nlk.description and nlk.description not in merged_desc:
-        merged_desc = (
-            f"{merged_desc}\n{clean_description_for_ai(nlk.description)}".strip()
-            if merged_desc
-            else clean_description_for_ai(nlk.description)
-        )
-
-    merged_toc = (base.toc or "").strip()
-    merged_toc = clean_toc_for_ai(merged_toc)
-    if nlk.toc and nlk.toc not in merged_toc:
-        merged_toc = (
-            f"{merged_toc}\n{clean_toc_for_ai(nlk.toc)}".strip()
-            if merged_toc
-            else clean_toc_for_ai(nlk.toc)
-        )
-
     s = get_settings() if settings is None else settings
-    merged_category = (base.category or "").strip()
-    merged_category = clean_category_for_ai(merged_category, s.category_remove_words)
-    if nlk.class_no:
-        class_hint = f"국립중앙도서관KDC:{nlk.class_no}"
-        if class_hint not in merged_category:
-            merged_category = f"{merged_category} > {class_hint}".strip(" >")
+    merged_category = clean_category_for_ai((base.category or "").strip(), s.category_remove_words)
+    merged_desc = clean_description_for_ai((base.description or "").strip())
+    merged_toc = clean_toc_for_ai((base.toc or "").strip())
 
-    if nlk.subjects:
-        subj_hint = " ".join(nlk.subjects[:8])
-        if subj_hint and subj_hint not in merged_toc:
-            merged_toc = f"{merged_toc}\n주제어힌트:{subj_hint}".strip() if merged_toc else f"주제어힌트:{subj_hint}"
-    kwd_norm = re.sub(r"[-\s]", "", nlk.kwd or "")
-    if nlk.kwd and not kwd_norm.isdigit() and nlk.kwd not in merged_toc:
-        merged_toc = f"{merged_toc}\nNLK키워드:{nlk.kwd}".strip() if merged_toc else f"NLK키워드:{nlk.kwd}"
-    if nlk.book_tb_cnt_url and nlk.book_tb_cnt_url not in merged_toc:
-        merged_toc = (
-            f"{merged_toc}\nNLK목차URL:{nlk.book_tb_cnt_url}".strip()
-            if merged_toc
-            else f"NLK목차URL:{nlk.book_tb_cnt_url}"
-        )
-    if nlk.book_intro_url and nlk.book_intro_url not in merged_desc:
-        merged_desc = (
-            f"{merged_desc}\nNLK소개URL:{nlk.book_intro_url}".strip()
-            if merged_desc
-            else f"NLK소개URL:{nlk.book_intro_url}"
-        )
+    if secondary_source == "kpipa" and (nlk.toc or "").strip():
+        kt = clean_toc_for_ai(nlk.toc)
+        if kt and kt not in merged_toc:
+            merged_toc = f"{merged_toc}\n{kt}".strip() if merged_toc else kt
 
     return AladinMetadata653(
         category=merged_category,

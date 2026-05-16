@@ -34,7 +34,7 @@ from app.ai_service import (
     parse_keyword_line,
 )
 from app.config import Settings
-from app.fetcher import fetch_aladin_for_653, fetch_nlk_hint_by_isbn, merge_aladin_with_nlk
+from app.fetcher import fetch_aladin_for_653, fetch_secondary_metadata_hint, merge_aladin_with_nlk
 from app.models import parse_653_keywords
 from app.preprocess import build_forbidden_set, should_keep_keyword
 
@@ -69,15 +69,14 @@ async def diagnose_isbn(
         "cat_group": "",
         # 입력 데이터 품질
         "toc_raw_len": 0,      # 알라딘 원본 목차 길이
-        "toc_merged_len": 0,   # NLK 병합 후 목차 길이
+        "toc_merged_len": 0,   # KPIPA 목차 병합 후 목차 길이
         "desc_raw_len": 0,     # 알라딘 원본 설명 길이
-        "desc_merged_len": 0,  # NLK 병합 후 설명 길이
-        # NLK 데이터
-        "nlk_class_no": "",
-        "nlk_kwd": "",
-        "nlk_subjects": 0,
-        "nlk_toc_added": False,
-        "nlk_desc_added": False,
+        "desc_merged_len": 0,  # 병합 후 설명 길이(알라딘만; KPIPA는 설명 미병합)
+        # KPIPA(목차만)
+        "hint_src": "",
+        "kpipa_toc_hint_len": 0,
+        "kpipa_toc_added": False,
+        "kpipa_configured": False,
         # 출력 품질
         "ai_kw_count": 0,      # AI 응답에서 유효한 키워드 수
         "final_kw_count": 0,   # 후처리 후 최종 키워드 수
@@ -90,6 +89,8 @@ async def diagnose_isbn(
     }
 
     try:
+        result["kpipa_configured"] = bool(settings.kpipa_enable and settings.kpipa_api_key)
+
         # 1. 알라딘 수집
         base_meta, debug = await fetch_aladin_for_653(
             isbn, settings=settings, include_debug=True, client=client
@@ -100,18 +101,17 @@ async def diagnose_isbn(
         result["toc_raw_len"] = len(base_meta.toc)
         result["desc_raw_len"] = len(base_meta.description)
 
-        # 2. NLK 수집
-        nlk = await fetch_nlk_hint_by_isbn(isbn, settings=settings, client=client)
-        result["nlk_class_no"] = nlk.class_no
-        result["nlk_kwd"] = nlk.kwd
-        result["nlk_subjects"] = len(nlk.subjects)
+        # 2. KPIPA 목차 힌트(앱 본선에서 NLK 미사용)
+        hint, hint_src = await fetch_secondary_metadata_hint(isbn, settings=settings, client=client)
+        result["hint_src"] = hint_src
+        result["kpipa_toc_hint_len"] = len((hint.toc or "").strip())
 
-        # 3. NLK 병합
-        meta = merge_aladin_with_nlk(base_meta, nlk, settings=settings)
+        # 3. 병합(알라딘 + KPIPA 목차만)
+        merge_src = "kpipa" if hint_src == "kpipa" else "none"
+        meta = merge_aladin_with_nlk(base_meta, hint, settings=settings, secondary_source=merge_src)
         result["toc_merged_len"] = len(meta.toc)
         result["desc_merged_len"] = len(meta.description)
-        result["nlk_toc_added"] = result["toc_merged_len"] > result["toc_raw_len"]
-        result["nlk_desc_added"] = result["desc_merged_len"] > result["desc_raw_len"]
+        result["kpipa_toc_added"] = result["toc_merged_len"] > result["toc_raw_len"]
         result["data_richness"] = result["toc_merged_len"] + result["desc_merged_len"]
 
         # 4. 653 생성
@@ -150,8 +150,8 @@ async def diagnose_isbn(
             flags.append("backup사용")
         if result["final_kw_count"] < settings.min_keywords_653:
             flags.append(f"키워드부족({result['final_kw_count']}개)")
-        if not result["nlk_class_no"] and not result["nlk_kwd"]:
-            flags.append("NLK없음")
+        if settings.kpipa_enable and settings.kpipa_api_key and not result["kpipa_toc_hint_len"]:
+            flags.append("KPIPA목차없음")
         result["flag"] = " | ".join(flags)
 
     except Exception as e:
@@ -175,7 +175,7 @@ def print_report(results: list[dict], min_kw: int) -> None:
     print(sep)
     print(
         f"  {'라벨':<30} {'분야':^8} {'목차':>5} {'설명':>5} {'풍부도':^12}"
-        f" {'NLK KDC':^8} {'AI→최종':^7} {'B':^3} {'주의플래그'}"
+        f" {'KPIPA목차':^10} {'AI→최종':^7} {'B':^3} {'주의플래그'}"
     )
     print("-" * 110)
 
@@ -185,7 +185,11 @@ def print_report(results: list[dict], min_kw: int) -> None:
             continue
 
         bar = _bar(r["data_richness"])
-        nlk_kdc = r["nlk_class_no"] or "-"
+        kpipa_toc = (
+            f"{r['kpipa_toc_hint_len']}자"
+            if r["kpipa_toc_hint_len"]
+            else "-"
+        )
         kw_flow = f"{r['ai_kw_count']}→{r['final_kw_count']}"
         backup_mark = "Y" if r["backup_used"] else "-"
         flag = r["flag"] or "OK"
@@ -194,7 +198,7 @@ def print_report(results: list[dict], min_kw: int) -> None:
             f"  {r['label']:<30} {r['cat_group']:^8}"
             f" {r['toc_merged_len']:>5} {r['desc_merged_len']:>5}"
             f" {bar} {r['data_richness']:>4}자"
-            f"  {nlk_kdc:^8} {kw_flow:^7} {backup_mark:^3}  {flag}"
+            f"  {kpipa_toc:^10} {kw_flow:^7} {backup_mark:^3}  {flag}"
         )
         print(f"    제목: {r['title']}")
         print(f"    카테고리: {r['category']}")
@@ -208,18 +212,20 @@ def print_report(results: list[dict], min_kw: int) -> None:
     print("  [편차 패턴 요약]")
     print(sep)
 
-    no_toc     = [r for r in ok if r["toc_merged_len"] == 0]
+    no_toc = [r for r in ok if r["toc_merged_len"] == 0]
     short_desc = [r for r in ok if r["desc_merged_len"] < 100]
-    no_nlk     = [r for r in ok if not r["nlk_class_no"] and not r["nlk_kwd"]]
-    backups    = [r for r in ok if r["backup_used"]]
-    low_kw     = [r for r in ok if r["final_kw_count"] < min_kw]
+    no_kpipa_toc = [
+        r for r in ok if r.get("kpipa_configured") and not r["kpipa_toc_hint_len"]
+    ]
+    backups = [r for r in ok if r["backup_used"]]
+    low_kw = [r for r in ok if r["final_kw_count"] < min_kw]
 
     def _labels(lst: list[dict]) -> str:
         return ", ".join(r["label"].split(" [")[0] for r in lst) or "(없음)"
 
     print(f"  목차 없음           ({len(no_toc):>2}권): {_labels(no_toc)}")
     print(f"  설명 빈약(<100자)   ({len(short_desc):>2}권): {_labels(short_desc)}")
-    print(f"  NLK 데이터 없음     ({len(no_nlk):>2}권): {_labels(no_nlk)}")
+    print(f"  KPIPA 목차 힌트 없음 ({len(no_kpipa_toc):>2}권): {_labels(no_kpipa_toc)}")
     print(f"  backup 사용(AI부족) ({len(backups):>2}권): {_labels(backups)}")
     print(f"  키워드 {min_kw}개 미만      ({len(low_kw):>2}권): {_labels(low_kw)}")
 
@@ -233,7 +239,7 @@ def print_report(results: list[dict], min_kw: int) -> None:
         "\n  [해석 가이드]\n"
         "  목차없음 + 설명빈약 → 입력 데이터 부족이 편차 원인일 가능성 높음\n"
         "  backup=Y           → AI 결과가 금지어/저가치 필터에 걸려 보충됨 → 프롬프트 조정 여지\n"
-        "  NLK없음            → NLK 보강이 안 된 케이스 → NLK 수집 개선 여지\n"
+        "  KPIPA목차없음      → KPIPA에 해당 ISBN 목차가 없거나 비활성\n"
         "  키워드부족          → 최종 품질 저하 구간\n"
     )
 
@@ -244,7 +250,7 @@ CSV_COLUMNS = [
     "실행일시", "ISBN", "도서명", "제목(알라딘)",
     "분야그룹", "카테고리",
     "목차길이", "설명길이", "입력풍부도",
-    "NLK_KDC", "NLK_키워드", "NLK_주제어수", "NLK_목차보강", "NLK_설명보강",
+    "보강출처", "KPIPA_목차힌트_글자수", "KPIPA_목차병합",
     "AI키워드수", "최종키워드수", "backup사용",
     "키워드목록", "653필드", "주의플래그", "오류",
 ]
@@ -270,11 +276,9 @@ def save_csv(results: list[dict], out_dir: Path = Path(".")) -> Path:
                 "목차길이":     r.get("toc_merged_len", ""),
                 "설명길이":     r.get("desc_merged_len", ""),
                 "입력풍부도":   r.get("data_richness", ""),
-                "NLK_KDC":      r.get("nlk_class_no", ""),
-                "NLK_키워드":   r.get("nlk_kwd", ""),
-                "NLK_주제어수": r.get("nlk_subjects", ""),
-                "NLK_목차보강": "Y" if r.get("nlk_toc_added") else "-",
-                "NLK_설명보강": "Y" if r.get("nlk_desc_added") else "-",
+                "보강출처":     r.get("hint_src", ""),
+                "KPIPA_목차힌트_글자수": r.get("kpipa_toc_hint_len", ""),
+                "KPIPA_목차병합": "Y" if r.get("kpipa_toc_added") else "-",
                 "AI키워드수":   r.get("ai_kw_count", ""),
                 "최종키워드수": r.get("final_kw_count", ""),
                 "backup사용":   "Y" if r.get("backup_used") else "-",

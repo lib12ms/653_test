@@ -3,7 +3,7 @@
 
 ISBN 목록으로 빠른/정밀 모드를 비교하고 엑셀(.xlsx)로 저장합니다.
 
-측정 항목: API 전체 소요 시간(알라딘+NLK+OpenAI), OpenAI 토큰(prompt/completion/total), 653 결과
+측정 항목: API 전체 소요 시간(알라딘+KPIPA 목차 선택+OpenAI), OpenAI 토큰(prompt/completion/total), 653 결과
 
 요구: 백엔드 실행 중 (uvicorn), `.env`에 API 키 설정
 

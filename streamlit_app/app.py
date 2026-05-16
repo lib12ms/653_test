@@ -1,18 +1,30 @@
 """
-I2M 653 필드 UI — 단건(ISBN) 조회 + 배치 처리
+I2M 653 필드 UI — 단건(ISBN) 조회 + 배치 처리 + 품질 평가
 """
 from __future__ import annotations
 
 import csv
 import io
 import os
+import sys
+from pathlib import Path
 from typing import Any
 
 import httpx
+import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
 load_dotenv()
+
+_root = Path(__file__).resolve().parents[1]
+_kit = _root / "0516test"
+_backend = _root / "backend"
+for _p in (_kit, _backend):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
+
+from quality_rubric import EVAL_COLUMNS, RUBRIC_GUIDE_KO, empty_eval_fields
 
 BACKEND_URL = st.secrets["BACKEND_URL"].rstrip("/")
 DEFAULT_TIMEOUT = int(os.getenv("I2M_653_HTTP_TIMEOUT", "60"))
@@ -35,20 +47,18 @@ def post_json(path: str, body: dict[str, Any]) -> tuple[dict[str, Any] | None, s
 
 
 def _render_nlk_info(data: dict[str, Any]) -> None:
-    nlk = data.get("nlk_hint") or {}
-    class_no = nlk.get("class_no", "")
-    kwd = nlk.get("kwd", "")
-    subjects = nlk.get("subjects") or []
-    if not (class_no or kwd or subjects):
+    """백엔드 `nlk_hint` 필드명은 유지하나, 본선에서는 KPIPA 목차만 전달될 수 있음."""
+    hint = data.get("nlk_hint") or {}
+    src = data.get("hint_source") or ""
+    toc = (hint.get("toc") or "").strip()
+    if src == "kpipa" and toc:
+        st.caption(f"KPIPA 목차 병합 | 약 **{len(toc)}**자 (미리보기: {toc[:120]}{'…' if len(toc) > 120 else ''})")
         return
-    parts = []
-    if class_no:
-        parts.append(f"KDC **{class_no}**")
-    if kwd:
-        parts.append(f"키워드: {kwd}")
-    if subjects:
-        parts.append(f"주제어: {', '.join(subjects[:5])}")
-    st.caption("NLK | " + " · ".join(parts))
+    if src == "kpipa":
+        st.caption("KPIPA | 목차 힌트 없음(해당 ISBN 미등록 또는 비활성)")
+        return
+    if src:
+        st.caption(f"보강 출처: {src}")
 
 
 def _render_editable_653(data: dict[str, Any], key_prefix: str) -> None:
@@ -101,8 +111,51 @@ def _make_csv_bytes(rows: list[dict]) -> bytes:
     return buf.getvalue().encode("utf-8-sig")
 
 
+_EVAL_MACHINE_COLS = [
+    "ISBN",
+    "제목",
+    "카테고리",
+    "KPIPA_목차_글자수",
+    "키워드목록",
+    "653필드",
+    "오류",
+]
+
+
+def _make_eval_labeling_csv_bytes(df: pd.DataFrame) -> bytes:
+    cols = _EVAL_MACHINE_COLS + list(EVAL_COLUMNS)
+    buf = io.BytesIO()
+    df[cols].to_csv(buf, index=False, encoding="utf-8-sig")
+    return buf.getvalue()
+
+
+def _build_eval_column_config() -> dict[str, Any]:
+    cfg: dict[str, Any] = {}
+    for c in _EVAL_MACHINE_COLS:
+        cfg[c] = st.column_config.TextColumn(c, disabled=True)
+    cfg["평가_종합"] = st.column_config.SelectboxColumn(
+        "평가_종합",
+        options=["", "양호", "보통", "불량"],
+        help="사서 종합 판정",
+    )
+    score_opts = ["", "1", "2", "3", "4", "5"]
+    cfg["평가_검색효용_1to5"] = st.column_config.SelectboxColumn(
+        "검색효용(1~5)",
+        options=score_opts,
+        help="1=낮음, 5=높음",
+    )
+    cfg["평가_주제부합_1to5"] = st.column_config.SelectboxColumn(
+        "주제부합(1~5)",
+        options=score_opts,
+        help="1=낮음, 5=높음",
+    )
+    for c in ("평가_불량태그", "평가_메모", "평가자", "평가일"):
+        cfg[c] = st.column_config.TextColumn(c)
+    return cfg
+
+
 # ── 탭 ───────────────────────────────────────────────────────────────────────
-tab_single, tab_batch = st.tabs(["단건 조회", "배치 처리"])
+tab_single, tab_batch, tab_eval = st.tabs(["단건 조회", "배치 처리", "품질 평가"])
 
 # ── 탭 1: 단건 ───────────────────────────────────────────────────────────────
 with tab_single:
@@ -111,7 +164,7 @@ with tab_single:
         if not (isbn or "").strip():
             st.warning("ISBN을 입력하세요.")
         else:
-            with st.spinner("알라딘·NLK 수집 → GPT 분석…"):
+            with st.spinner("알라딘 수집 → KPIPA 목차(선택) → GPT 분석…"):
                 data, err = post_json(
                     "/api/field653",
                     {"isbn": isbn.strip()},
@@ -180,10 +233,73 @@ with tab_batch:
             mime="text/csv",
         )
 
+# ── 탭 3: 품질 평가 (사서 라벨링) ───────────────────────────────────────────
+with tab_eval:
+    st.markdown(
+        "백엔드 API로 653을 생성한 뒤, 표에서 **평가_** 열만 채우고 CSV로 내려받습니다. "
+        "오프라인으로 `python 0516test/summarize_eval_csv.py <파일.csv>` 로 집계할 수 있습니다."
+    )
+    with st.expander("평가 기준 안내", expanded=False):
+        st.markdown(RUBRIC_GUIDE_KO)
+
+    isbn_eval = st.text_area(
+        "ISBN 목록 (한 줄에 하나)",
+        height=160,
+        placeholder="9788936433598\n9788954641326",
+        key="eval_isbn_area",
+    )
+
+    if st.button("653 불러와 평가 시트 만들기", type="primary", key="btn_eval_load"):
+        lines = [ln.strip() for ln in isbn_eval.splitlines() if ln.strip()]
+        if not lines:
+            st.warning("ISBN을 입력하세요.")
+        else:
+            eval_rows: list[dict[str, Any]] = []
+            prog = st.progress(0, text="653 생성 중…")
+            for i, isbn_item in enumerate(lines):
+                data, err = post_json("/api/field653", {"isbn": isbn_item})
+                aladin = (data or {}).get("aladin") or {}
+                hint = (data or {}).get("nlk_hint") or {}
+                toc_s = (hint.get("toc") or "").strip()
+                base = {
+                    "ISBN": isbn_item,
+                    "제목": aladin.get("title", ""),
+                    "카테고리": aladin.get("category", ""),
+                    "KPIPA_목차_글자수": len(toc_s) if toc_s else "",
+                    "키워드목록": " / ".join((data or {}).get("keywords") or []),
+                    "653필드": (data or {}).get("tag_653", ""),
+                    "오류": err or ((data or {}).get("error") or ""),
+                }
+                base.update(empty_eval_fields())
+                eval_rows.append(base)
+                prog.progress((i + 1) / len(lines), text=f"{i + 1}/{len(lines)} 완료")
+            st.session_state["eval_label_df"] = pd.DataFrame(eval_rows)
+
+    eval_df = st.session_state.get("eval_label_df")
+    if eval_df is not None and not eval_df.empty:
+        st.subheader("라벨링 표")
+        edited = st.data_editor(
+            eval_df,
+            column_config=_build_eval_column_config(),
+            hide_index=True,
+            use_container_width=True,
+            num_rows="fixed",
+            key="eval_data_editor",
+        )
+        st.session_state["eval_label_df"] = edited
+        st.download_button(
+            "평가 시트 CSV 다운로드",
+            data=_make_eval_labeling_csv_bytes(edited),
+            file_name="653_평가시트.csv",
+            mime="text/csv",
+            key="dl_eval_csv",
+        )
 
 st.divider()
 st.markdown(
     "**실행:** `.streamlit/secrets.toml` 에 `BACKEND_URL` 설정 "
     "(로컬: `http://127.0.0.1:8000` / 배포: `https://six53-test.onrender.com`). "
-    "백엔드 실행: `cd backend && uvicorn app.main:app --reload`"
+    "백엔드: `cd backend && uvicorn app.main:app --reload`. "
+    "**품질 평가(오프라인):** `python 0516test/export_eval_sheet.py` 로 시트 생성 후 사서가 채우고, "
+    "`python 0516test/summarize_eval_csv.py 0516test/eval_sheet_….csv` 로 요약. 기준·컬럼 정의는 `0516test/quality_rubric.py`."
 )

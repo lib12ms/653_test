@@ -3,7 +3,7 @@
 
 653_prompt_test_template.csv 의 ISBN 행마다 field653 API를 호출해 소요 시간을 기록합니다.
 
-요구사항: 백엔드(uvicorn 등) 실행 + Aladin/OpenAI/NLK 키가 유효할 것.
+요구사항: 백엔드(uvicorn 등) 실행 + Aladin/OpenAI 키가 유효할 것(KPIPA는 선택).
 
   I2M_653_API_BASE  기본값 http://127.0.0.1:8000 (프로젝트 루트 `.env` 에 두면 자동 로드)
 

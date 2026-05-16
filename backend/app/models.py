@@ -23,7 +23,7 @@ class AladinMetadata653(BaseModel):
 
 
 class NlkMetadataHint(BaseModel):
-    """국립중앙도서관 API에서 653 보강에 쓸 힌트."""
+    """보강 힌트(현행 파이프라인: KPIPA에서 채우는 경우 목차 `toc`만 사용)."""
 
     class_no: str = ""
     kwd: str = ""
@@ -74,7 +74,11 @@ class Field653Response(BaseModel):
     error: str | None = None
     token_usage: TokenUsage | None = None
     aladin: AladinMetadata653 | None = None
-    nlk_hint: NlkMetadataHint | None = None
+    nlk_hint: NlkMetadataHint | None = None  # 응답 필드명 유지(API 호환); KPIPA 목차만 채울 수 있음
+    hint_source: str | None = Field(
+        default=None,
+        description="보강 출처: kpipa(목차 병합됨) | None",
+    )
     preprocess_debug: dict[str, str] | None = None
 
 
