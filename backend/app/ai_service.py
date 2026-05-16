@@ -35,6 +35,16 @@ CATEGORY_PROMPTS = {
         "- 단순 장르명(소설, 시, 에세이)이나 출간 시기 라벨은 제외하세요.\n"
         "- '사랑의형상', '감정조각', '문학적탐구' 같은 평론 문구는 명사형 주제어로 치환하세요.\n"
     ),
+    "에세이": (
+        "이 책은 에세이입니다.\n"
+        "- '따뜻한', '여운', '감성', '힐링', '위로', '공감', '소소한', '잔잔한' 같은\n"
+        "  형용사적·감상적 표현은 절대 키워드로 쓰지 마세요.\n"
+        "- 그 감정을 일으키는 구체적 소재(예: 반려견, 이별, 여행지, 골목, 계절)나\n"
+        "  사회적 신분·상황(예: 워킹맘, 투병기, 육아일상, 이민생활, 간호사일상)을 우선 추출하세요.\n"
+        "- 저자의 직업·삶의 조건이 뚜렷하다면 그 키워드를 포함하세요(예: 제주살이, 싱글라이프, 노년일상).\n"
+        "- 시대적·지역적 배경이 있다면 포함하세요(예: 1970년대, 농촌, 경성, 이민사회).\n"
+        "- 단순 장르명(에세이, 수필)이나 평론·홍보 문구는 제외하세요.\n"
+    ),
     "인문학": (
         "이 책은 인문학 도서입니다.\n"
         "- 사상적 개념, 역사적 사건/시대, 철학적 주제어 위주로 추출하세요.\n"
@@ -109,7 +119,7 @@ CATEGORY_MAP = {
     "소설": "문학",
     "시": "문학",
     "희곡": "문학",
-    "에세이": "문학",
+    "에세이": "에세이",
     "장르소설": "문학",
     "인문학": "인문학",
     "역사": "인문학",
@@ -155,6 +165,12 @@ _EXTENDED_COUNTRY_GENRE_RE = re.compile(
     r"^(현대|당대|근대)?"
     r"(한국|일본|영미|중국|미국|영국|프랑스|독일|러시아|스페인|이탈리아|북유럽)"
     r"(소설|시|희곡|문학|에세이|수필|산문)$"
+)
+
+# 에세이 전용 — 형용사적 감상어 (이용자 검색어로 쓰이지 않는 정서 수식어)
+_ESSAY_SENTIMENT_RE = re.compile(
+    r"^(따뜻한?|따스한?|여운|감성적?|힐링|위로|공감|소소한?|잔잔한?|잔잔함"
+    r"|감동적?|아늑한?|포근한?|따뜻함|아름다운?|사색적?|서정적?|담담한?)$"
 )
 
 # 문학·서사 비평·메타 표현 — 이용자 검색 키워드로는 효용이 낮은 편
@@ -265,7 +281,9 @@ def _is_low_value_keyword(normalized_keyword: str, category_group: str = "") -> 
         return True
     if _EXTENDED_COUNTRY_GENRE_RE.match(compact):
         return True
-    if category_group == "문학" and _LITERATURE_META_RE.search(compact):
+    if category_group in ("문학", "에세이") and _LITERATURE_META_RE.search(compact):
+        return True
+    if category_group == "에세이" and _ESSAY_SENTIMENT_RE.match(compact):
         return True
     if compact in _PURE_GENRE_LABELS:
         return True
@@ -388,7 +406,7 @@ def _system_and_user_messages(
     )
 
     literature_prompt = ""
-    if category_group == "문학":
+    if category_group in ("문학", "에세이"):
         literature_prompt = (
             "\n[문학 그룹 전용 — 이용자 도서 검색용 소재어]\n"
             "- 문학 도서는 비평·서사이론형 메타 표현을 키워드로 쓰지 마세요. "
