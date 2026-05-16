@@ -70,6 +70,10 @@ ISBNS: list[str] = [
 CONCURRENCY = 1  # 순차 처리 (rate limit 방지)
 REQUEST_DELAY_S = 3  # 요청 간 대기 시간(초)
 
+# ── 검토 필요 판단 기준 ────────────────────────────────────────────────────
+REVIEW_SCORE_THRESHOLD = 0.7   # 품질점수 미만이면 검토 대상
+REVIEW_MIN_KEYWORDS = 5        # 최종 키워드 수 미달이면 검토 대상
+
 # ── 처리 함수 ─────────────────────────────────────────────────────────────
 
 async def process_isbn(
@@ -93,6 +97,7 @@ async def process_isbn(
         "최종수": "",
         "품질점수": "",
         "경고플래그": "",
+        "검토필요": "",
         "오류": "",
     }
     async with sem:
@@ -132,9 +137,16 @@ async def process_isbn(
                 result["최종수"] = quality.final_count
                 result["품질점수"] = quality.quality_score
                 result["경고플래그"] = " | ".join(quality.flags)
+                needs_review = (
+                    quality.quality_score < REVIEW_SCORE_THRESHOLD
+                    or quality.final_count < REVIEW_MIN_KEYWORDS
+                    or bool(quality.flags)
+                )
+                result["검토필요"] = "Y" if needs_review else "N"
 
+            review_mark = " ★검토" if result["검토필요"] == "Y" else ""
             print(f"  [{idx:>2}/{total}] OK  {base_meta.title[:30]}  "
-                  f"품질={quality.quality_score if quality else '?'}")
+                  f"품질={quality.quality_score if quality else '?'}{review_mark}")
         except Exception as e:
             result["오류"] = str(e)
             print(f"  [{idx:>2}/{total}] ERR {isbn}: {e}")
@@ -147,19 +159,37 @@ async def process_isbn(
 CSV_COLUMNS = [
     "순번", "ISBN", "제목", "저자", "카테고리",
     "653필드", "키워드목록",
-    "AI생성수", "차단수", "최종수", "품질점수", "경고플래그",
+    "AI생성수", "차단수", "최종수", "품질점수", "경고플래그", "검토필요",
     "오류",
 ]
 
+REVIEW_COLUMNS = [
+    "순번", "ISBN", "제목", "카테고리",
+    "키워드목록", "품질점수", "경고플래그", "오류",
+]
 
-def save_csv(results: list[dict], out_dir: Path) -> Path:
+
+def save_csv(results: list[dict], out_dir: Path) -> tuple[Path, Path | None]:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    path = out_dir / f"653_배치_{ts}.csv"
-    with open(path, "w", newline="", encoding="utf-8-sig") as f:
+
+    # 전체 결과
+    full_path = out_dir / f"653_배치_{ts}.csv"
+    with open(full_path, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
         writer.writeheader()
         writer.writerows(results)
-    return path
+
+    # 검토 필요 항목만 별도 저장
+    review_rows = [r for r in results if r.get("검토필요") == "Y" or r.get("오류")]
+    review_path: Path | None = None
+    if review_rows:
+        review_path = out_dir / f"653_검토대기_{ts}.csv"
+        with open(review_path, "w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.DictWriter(f, fieldnames=REVIEW_COLUMNS, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(review_rows)
+
+    return full_path, review_path
 
 
 # ── 진입점 ────────────────────────────────────────────────────────────────
@@ -182,12 +212,21 @@ async def main() -> None:
         results = await asyncio.gather(*tasks)
 
     results = sorted(results, key=lambda r: r["순번"])
-    csv_path = save_csv(list(results), out_dir=Path(__file__).parent)
+    full_path, review_path = save_csv(list(results), out_dir=Path(__file__).parent)
 
     ok = sum(1 for r in results if not r["오류"])
     err = sum(1 for r in results if r["오류"])
-    print(f"\n완료: 성공 {ok}권 / 오류 {err}권")
-    print(f"CSV 저장: {csv_path.name}")
+    review = sum(1 for r in results if r.get("검토필요") == "Y")
+    scores = [r["품질점수"] for r in results if isinstance(r.get("품질점수"), float)]
+    avg_score = round(sum(scores) / len(scores), 3) if scores else "-"
+
+    print(f"\n{'='*50}")
+    print(f"완료: 성공 {ok}권 / 오류 {err}권 / 총 {total}권")
+    print(f"품질: 평균점수 {avg_score}  |  검토필요 {review}권")
+    print(f"{'='*50}")
+    print(f"전체 결과: {full_path.name}")
+    if review_path:
+        print(f"검토 대기: {review_path.name}  ({review}건)")
 
 
 if __name__ == "__main__":
