@@ -82,10 +82,14 @@ class Field653Response(BaseModel):
     preprocess_debug: dict[str, str] | None = None
 
 
-def parse_653_keywords(tag_653: str | None) -> list[str]:
+def parse_653_keywords(tag_653: str | None, *, max_keywords: int = 15) -> list[str]:
     """
     '=653  \\$a아동문학$a정서조절' → ['아동문학', '정서조절']
+
+    max_keywords: 응답·표시용 키워드 상한. API는 `Settings.max_keywords_653` 또는
+    `Field653FromMetadataRequest.max_keywords`를 넘겨야 설정과 일치한다.
     """
+    cap = max(1, min(int(max_keywords), 50))
     if not tag_653:
         return []
     s = tag_653.strip()
@@ -101,6 +105,6 @@ def parse_653_keywords(tag_653: str | None) -> list[str]:
         if w not in seen:
             seen.add(w)
             out.append(w)
-        if len(out) >= 7:
+        if len(out) >= cap:
             break
     return out

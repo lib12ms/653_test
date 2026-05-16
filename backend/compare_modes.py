@@ -142,7 +142,7 @@ def _postprocess(
         category=category, toc=meta.toc, description=meta.description,
     )
     tag = build_marc_653_line(subfield) if subfield else ""
-    kws = parse_653_keywords(tag)
+    kws = parse_653_keywords(tag, max_keywords=max_keywords)
     return {
         "kw_count": len(kws),
         "ai_kw_count": len(ai_valid),

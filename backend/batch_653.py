@@ -117,7 +117,7 @@ async def process_isbn(
                 return result
 
             tag = build_marc_653_line(raw_line)
-            kws = parse_653_keywords(tag)
+            kws = parse_653_keywords(tag, max_keywords=settings.max_keywords_653)
             result["653필드"] = tag
             result["키워드목록"] = " / ".join(kws)
 

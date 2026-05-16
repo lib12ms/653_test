@@ -42,3 +42,6 @@ backend/app/test.py
 나는 I2M*
 테스트를 통한*
 backend/app/test
+
+# 예전 코드 스냅샷(로컬 보관). Git 추적만 끊으려면: git rm -r --cached backup_20260515
+backup_20260515/

@@ -60,6 +60,12 @@ class Settings(BaseSettings):
     min_keywords_653: int = Field(default=5, ge=1, le=15)
     isbn_cache_ttl_s: int = Field(default=600, ge=0, description="ISBN 결과 캐시 TTL(초)")
     isbn_cache_max_entries: int = Field(default=2000, ge=1, description="ISBN 결과 캐시 최대 항목 수")
+    field653_cache_bundle_version: str = Field(
+        default="1",
+        description=(
+            "/api/field653 ISBN 캐시 키에 포함. 병합·전처리·프롬프트 변경 시 버전을 올려 기존 캐시 무효화"
+        ),
+    )
     category_remove_words_csv: str = Field(
         default="국내도서,외국도서,실용서,단행본,ebook,e-book,전자책,베스트셀러,신간,스테디셀러,md추천",
         description="카테고리 정제 시 제거할 유통/판매 분류어(CSV)",

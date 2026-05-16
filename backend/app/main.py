@@ -112,7 +112,7 @@ async def _build_response_from_meta(
             preprocess_debug=preprocess_debug,
         )
     tag = ai_service.build_marc_653_line(raw_line)
-    kws = parse_653_keywords(tag)
+    kws = parse_653_keywords(tag, max_keywords=max_kw)
     return Field653Response(
         success=True,
         tag_653=tag,
@@ -133,6 +133,7 @@ async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
     http_client: httpx.AsyncClient = app.state.http_client
     cache: _TtlCache = app.state.isbn_cache
     cache_key = (
+        f"v{str(s.field653_cache_bundle_version).strip() or '1'}|"
         f"{req.isbn.strip()}|{s.openai_model}|"
         f"{s.max_keywords_653}|{s.min_keywords_653}|"
         f"k{int(bool(s.kpipa_enable and s.kpipa_api_key))}"

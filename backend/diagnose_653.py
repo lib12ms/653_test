@@ -134,7 +134,7 @@ async def diagnose_isbn(
 
         # 최종 결과
         tag = build_marc_653_line(raw_line)
-        kws = parse_653_keywords(tag)
+        kws = parse_653_keywords(tag, max_keywords=settings.max_keywords_653)
         result["final_kw_count"] = len(kws)
         result["backup_used"] = result["final_kw_count"] > result["ai_kw_count"]
         result["keywords"] = kws
