@@ -15,7 +15,7 @@ from tenacity import (
 )
 
 from .config import Settings, get_settings
-from .models import AladinMetadata653, TokenUsage
+from .models import AladinMetadata653, Field653Quality, TokenUsage
 from .preprocess import (
     build_forbidden_set,
     clean_author_str,
@@ -632,13 +632,11 @@ def finalize_653(
     category: str = "",
     toc: str = "",
     description: str = "",
-) -> str:
-    """
-    AI가 뱉은 결과물에서 금지어/한 글자 단어를 최종 제거하고 $a 형식으로 반환.
-    """
+) -> tuple[str, Field653Quality]:
+    """AI 출력에서 금지어·저효용어를 제거하고 $a 형식과 품질 지표를 함께 반환."""
     keywords = [k.strip() for k in ai_output.split("$a") if k.strip()]
+    ai_raw_count = len(keywords)
 
-    # 기본적으로 작가소개성 키워드는 제외(단, 전기/평전/작가론 성격은 예외)
     author_bio_like = {
         "작가", "저자", "등단", "수상", "작품세계", "문단", "생애", "인터뷰", "연보", "약력",
     }
@@ -660,7 +658,11 @@ def finalize_653(
             seen.add(n)
             valid_keywords.append(kw.replace(" ", ""))
 
-    if not valid_keywords:
+    ai_valid_count = len(valid_keywords)
+    filtered_count = ai_raw_count - ai_valid_count
+    backup_used = ai_valid_count == 0
+
+    if backup_used:
         backup = _extract_backup_candidates(category, toc, description)
         for kw in backup:
             n = norm_text(kw)
@@ -677,7 +679,8 @@ def finalize_653(
             if len(valid_keywords) >= min_keywords:
                 break
 
-    if len(valid_keywords) < min_keywords:
+    category_fallback_used = len(valid_keywords) < min_keywords
+    if category_fallback_used:
         for kw in _extract_category_candidates(category):
             n = norm_text(kw)
             if n in seen:
@@ -689,7 +692,41 @@ def finalize_653(
             if len(valid_keywords) >= min_keywords:
                 break
 
-    return "".join([f"$a{k}" for k in valid_keywords[:max_keywords]])
+    final_count = len(valid_keywords[:max_keywords])
+
+    # 품질 점수 산출
+    flags: list[str] = []
+    if ai_raw_count < 3:
+        flags.append("AI생성부족")
+    filter_rate = filtered_count / ai_raw_count if ai_raw_count > 0 else 0.0
+    if filter_rate > 0.5:
+        flags.append("과다차단")
+    if backup_used:
+        flags.append("텍스트fallback사용")
+    if category_fallback_used:
+        flags.append("카테고리fallback사용")
+    if final_count < min_keywords:
+        flags.append("키워드부족")
+
+    score = min(final_count, max_keywords) / max(max_keywords, 1)
+    if filter_rate > 0.3:
+        score -= (filter_rate - 0.3) * 0.5
+    if backup_used:
+        score -= 0.15
+    if category_fallback_used:
+        score -= 0.10
+    score = round(max(0.0, min(1.0, score)), 3)
+
+    quality = Field653Quality(
+        ai_raw_count=ai_raw_count,
+        filtered_count=filtered_count,
+        final_count=final_count,
+        backup_used=backup_used,
+        category_fallback_used=category_fallback_used,
+        quality_score=score,
+        flags=flags,
+    )
+    return "".join([f"$a{k}" for k in valid_keywords[:max_keywords]]), quality
 
 
 async def generate_653_subfield_line(
@@ -698,14 +735,15 @@ async def generate_653_subfield_line(
     min_keywords: int = 5,
     settings: Settings | None = None,
     client: httpx.AsyncClient | None = None,
-) -> tuple[str | None, str | None, TokenUsage | None]:
+) -> tuple[str | None, str | None, TokenUsage | None, Field653Quality | None]:
     """
-    Returns (raw $a...$a... line without '=653' prefix, None on failure),
-    error message, and OpenAI token usage (if available).
+    Returns (subfield_line, error, token_usage, quality).
+    subfield_line: '$a키워드1$a키워드2…' 형식 (=653 접두 없음), 실패 시 None.
+    quality: Field653Quality 품질 지표, 실패 시 None.
     """
     s = get_settings() if settings is None else settings
     if not s.openai_api_key:
-        return None, "OPENAI_API_KEY가 설정되지 않았습니다.", None
+        return None, "OPENAI_API_KEY가 설정되지 않았습니다.", None, None
 
     category = meta.category
     title = meta.title
@@ -730,12 +768,12 @@ async def generate_653_subfield_line(
         )
     except Exception as e:
         logger.exception("OpenAI 653 호출 실패")
-        return None, str(e), None
+        return None, str(e), None, None
 
     forbidden = build_forbidden_set(title, authors)
     kws = parse_keyword_line(raw)
     ai_output = "".join(f"$a{kw}" for kw in kws if should_keep_keyword(kw, forbidden))
-    subfield_line = finalize_653(
+    subfield_line, quality = finalize_653(
         ai_output,
         forbidden,
         max_keywords=max_keywords,
@@ -745,9 +783,9 @@ async def generate_653_subfield_line(
         description=description,
     )
     if not subfield_line:
-        return None, "유효한 키워드를 추출하지 못했습니다.", usage
+        return None, "유효한 키워드를 추출하지 못했습니다.", usage, quality
 
-    return subfield_line, None, usage
+    return subfield_line, None, usage, quality
 
 
 def build_marc_653_line(subfield_line: str) -> str:

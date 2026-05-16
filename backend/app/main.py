@@ -95,7 +95,7 @@ async def _build_response_from_meta(
     client: httpx.AsyncClient | None = None,
     hint_source: str | None = None,
 ) -> Field653Response:
-    raw_line, err, token_usage = await ai_service.generate_653_subfield_line(
+    raw_line, err, token_usage, _quality = await ai_service.generate_653_subfield_line(
         meta,
         max_keywords=max_kw,
         min_keywords=min_kw,

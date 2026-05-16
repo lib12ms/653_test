@@ -88,6 +88,11 @@ async def process_isbn(
         "카테고리": "",
         "653필드": "",
         "키워드목록": "",
+        "AI생성수": "",
+        "차단수": "",
+        "최종수": "",
+        "품질점수": "",
+        "경고플래그": "",
         "오류": "",
     }
     async with sem:
@@ -105,7 +110,7 @@ async def process_isbn(
             merge_src = "kpipa" if hint_src == "kpipa" else "none"
             meta = merge_aladin_with_nlk(base_meta, nlk, settings=settings, secondary_source=merge_src)
 
-            raw_line, err, _usage = await ai_service.generate_653_subfield_line(
+            raw_line, err, _usage, quality = await ai_service.generate_653_subfield_line(
                 meta,
                 max_keywords=settings.max_keywords_653,
                 min_keywords=settings.min_keywords_653,
@@ -121,7 +126,15 @@ async def process_isbn(
             result["653필드"] = tag
             result["키워드목록"] = " / ".join(kws)
 
-            print(f"  [{idx:>2}/{total}] OK  {base_meta.title[:30]}")
+            if quality:
+                result["AI생성수"] = quality.ai_raw_count
+                result["차단수"] = quality.filtered_count
+                result["최종수"] = quality.final_count
+                result["품질점수"] = quality.quality_score
+                result["경고플래그"] = " | ".join(quality.flags)
+
+            print(f"  [{idx:>2}/{total}] OK  {base_meta.title[:30]}  "
+                  f"품질={quality.quality_score if quality else '?'}")
         except Exception as e:
             result["오류"] = str(e)
             print(f"  [{idx:>2}/{total}] ERR {isbn}: {e}")
@@ -131,7 +144,12 @@ async def process_isbn(
 
 # ── 저장 ─────────────────────────────────────────────────────────────────
 
-CSV_COLUMNS = ["순번", "ISBN", "제목", "저자", "카테고리", "653필드", "키워드목록", "오류"]
+CSV_COLUMNS = [
+    "순번", "ISBN", "제목", "저자", "카테고리",
+    "653필드", "키워드목록",
+    "AI생성수", "차단수", "최종수", "품질점수", "경고플래그",
+    "오류",
+]
 
 
 def save_csv(results: list[dict], out_dir: Path) -> Path:

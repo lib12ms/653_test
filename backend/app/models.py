@@ -64,6 +64,31 @@ class TokenUsage(BaseModel):
     total_tokens: int = 0
 
 
+class Field653Quality(BaseModel):
+    """ISBN 처리마다 자동 산출되는 키워드 품질 지표."""
+
+    ai_raw_count: int = 0
+    """AI가 출력한 키워드 수 (후처리 전)"""
+    filtered_count: int = 0
+    """후처리에서 차단된 키워드 수"""
+    final_count: int = 0
+    """최종 키워드 수"""
+    backup_used: bool = False
+    """AI 유효 키워드가 0개여서 텍스트 fallback을 사용했는지"""
+    category_fallback_used: bool = False
+    """min_keywords 미달로 카테고리 fallback을 사용했는지"""
+    quality_score: float = 0.0
+    """0.0~1.0 종합 품질 점수"""
+    flags: list[str] = Field(default_factory=list)
+    """경고 플래그 목록 (예: ['과다차단', 'fallback사용'])"""
+
+    @property
+    def filter_rate(self) -> float:
+        if self.ai_raw_count == 0:
+            return 0.0
+        return round(self.filtered_count / self.ai_raw_count, 3)
+
+
 class Field653Response(BaseModel):
     success: bool = True
     tag_653: str | None = None

@@ -115,7 +115,7 @@ async def diagnose_isbn(
         result["data_richness"] = result["toc_merged_len"] + result["desc_merged_len"]
 
         # 4. 653 생성
-        raw_line, err, _usage = await ai_service.generate_653_subfield_line(
+        raw_line, err, _usage, _quality = await ai_service.generate_653_subfield_line(
             meta,
             max_keywords=settings.max_keywords_653,
             min_keywords=settings.min_keywords_653,
