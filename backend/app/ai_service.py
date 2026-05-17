@@ -1,18 +1,11 @@
-"""653: 전처리 + OpenAI 의미분석(httpx) + 키워드도출."""
+"""653: 전처리 + OpenAI Responses API 의미분석 + 키워드도출."""
 from __future__ import annotations
 
 import logging
 import re
-from typing import Any
-from urllib.parse import urlparse
 
 import httpx
-from tenacity import (
-    retry,
-    retry_if_exception,
-    stop_after_attempt,
-    wait_exponential,
-)
+from openai import AsyncOpenAI
 
 from .config import Settings, get_settings
 from .models import AladinMetadata653, Field653Quality, TokenUsage
@@ -25,6 +18,22 @@ from .preprocess import (
 )
 
 logger = logging.getLogger(__name__)
+
+# OpenAI 클라이언트 싱글턴 — 첫 호출 시 초기화
+_openai_client: AsyncOpenAI | None = None
+
+
+def _get_openai_client(settings: Settings) -> AsyncOpenAI:
+    global _openai_client
+    if _openai_client is not None:
+        return _openai_client
+    kwargs: dict = {"api_key": settings.openai_api_key, "max_retries": 4}
+    if settings.openai_base_url:
+        kwargs["base_url"] = settings.openai_base_url
+    if settings.allow_insecure_ssl_fallback:
+        kwargs["http_client"] = httpx.AsyncClient(verify=False, timeout=60.0)
+    _openai_client = AsyncOpenAI(**kwargs)
+    return _openai_client
 
 
 CATEGORY_PROMPTS = {
@@ -342,210 +351,144 @@ def _is_low_value_keyword(normalized_keyword: str, category_group: str = "") -> 
     return False
 
 
-def _can_use_insecure_fallback(base_url: str, settings: Settings) -> bool:
-    if not settings.allow_insecure_ssl_fallback:
-        return False
-    allow_hosts = settings.insecure_ssl_fallback_hosts
-    if not allow_hosts:
-        return False
-    host = (urlparse(base_url).hostname or "").lower()
-    return host in allow_hosts
-
-
-def _is_openai_retryable(exc: BaseException) -> bool:
-    if isinstance(exc, httpx.HTTPStatusError):
-        return exc.response.status_code in (429, 500, 502, 503, 504)
-    return isinstance(
-        exc,
-        (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout),
-    )
-
-
-@retry(
-    reraise=True,
-    stop=stop_after_attempt(4),
-    wait=wait_exponential(multiplier=0.7, min=0.7, max=10),
-    retry=retry_if_exception(_is_openai_retryable),
+# ── 정적 instructions (모든 ISBN에 공통 → 서버 측 캐시 적용) ──────────────────
+_STATIC_INSTRUCTIONS = (
+    "당신은 KORMARC 작성 경험이 풍부한 도서관 메타데이터 전문가입니다.\n"
+    "주어진 도서 정보를 바탕으로 MARC 653 자유주제어를 생성하세요.\n\n"
+    "## 653 필드 생성 4대 전역 원칙 (모든 분야 공통 적용)\n\n"
+    "### 1. 변별성 (Distinctiveness): 정보의 보완과 확장\n"
+    "서명(245)이나 주분류명(KDC)에 포함된 단어를 그대로 반복하지 마십시오. "
+    "제목이 지시하는 방향 너머의 하위 개념이나 연관 주제를 발굴하여 데이터의 밀도를 높이십시오.\n\n"
+    "### 2. 입상성 (Granularity): 추상의 안개를 걷어내는 구체성\n"
+    "범위가 너무 넓은 상위 개념(예: 과학, 역사, 에세이) 대신, 도서의 핵심 실체를 드러내는 "
+    "구체적인 명사(Entity)를 선택하십시오. "
+    "이용자가 검색 결과에서 이 책을 정확히 솎아낼 수 있을 만큼 날카로운 단어여야 합니다.\n\n"
+    "### 3. 의도성 (Search Intent): 이용자의 결핍과 상황에 응답\n"
+    "감상 형용사(따뜻한, 슬픈)로 표현하지 마십시오. "
+    "독자가 처한 사회적 상황, 정체성, 해결하고자 하는 문제를 키워드로 치환하십시오. "
+    "(예: '위로' → '번아웃', '마음치유' / '성장' → '자존감', '회복탄력성')\n"
+    "또한 책에 '등장'하는 사물·사례보다, 그 사물이 다루어지는 '주제 맥락'을 선택하십시오. "
+    "(예: '음식물쓰레기' → '음식낭비' 또는 '자원순환' / '삼성전자' → '대기업전략')\n\n"
+    "### 4. 시의성 (Timeliness): 고정된 체계를 넘는 살아있는 언어\n"
+    "도서관의 통제어 체계에만 갇히지 마십시오. "
+    "현재 이용자들이 해당 주제를 부를 때 사용하는 가장 대중적이고 시의성 있는 용어(신조어, 외래어 포함)를 "
+    "적극적으로 반영하십시오. (예: '거대언어모델' 옆에 'LLM' 병기)\n\n"
+    "## 653 키워드 선정 핵심 임무\n"
+    "**이 책의 독자가 구글 검색창에 입력할 법한 1~2단어 구성의 검색 키워드를 추출하세요.**\n"
+    "실제로 검색창에 치지 않을 단어(추상어, 감상어, 책 속 사물·사례)는 제외합니다.\n\n"
+    "## 653 키워드 선정 — 3단계 판단 기준\n\n"
+    "### [판단 기준 1] 주제어인가, 내용어인가 ← 가장 중요\n"
+    "책에 '등장'하는 사물·사례·인물·현상은 내용어입니다.\n"
+    "653 키워드는 '책이 무엇을 다루는가'를 가리키는 주제어여야 합니다.\n"
+    "내용어 → 주제어 치환 필수 예시:\n"
+    "  음식물쓰레기·비닐봉투·플라스틱병 → 음식낭비·자원순환·플라스틱오염·환경실천\n"
+    "  삼성전자·네이버·카카오(사례 기업) → 대기업전략·플랫폼경제·기술혁신·IT산업\n"
+    "  아버지·어머니·형제(등장인물) → 가족관계·세대갈등·부모자식·가족돌봄\n"
+    "  신호등·버스·지하철(소재 사물) → 도시교통·대중교통·도시인프라\n"
+    "  ※ 예외: 기술서의 도구명(파이썬, 챗GPT, 엑셀, 노션)은 그 자체가 핵심 검색어 → 허용\n\n"
+    "### [판단 기준 2] 이용자가 실제로 검색창에 입력할 단어인가\n"
+    "도서관 통합검색에서 이 책을 찾는 이용자가 실제로 입력할 명사·명사구여야 합니다.\n"
+    "  ✗ 판촉·감상어(따뜻한, 감동적, 힐링) — 이용자가 검색하지 않음\n"
+    "  ✗ 비평·메타어(서사구조, 문학적탐구, 실존의미) — 검색 효용 없음\n"
+    "  ✗ 기능 약한 일반어(연구, 개론, 방법, 이론, 활동, 실천) — 검색 변별력 없음\n"
+    "  ○ 구체 주제어(번아웃, 자존감, 기후변화, 반도체산업) — 검색 효용 높음\n\n"
+    "### [판단 기준 3] 추상화 수준 조정\n"
+    "너무 구체적(사례·인스턴스 수준) → 한 단계 위 주제로 치환 (판단 기준 1 참조)\n"
+    "너무 추상적(상위 분류 수준) → 구체 하위 개념으로 치환:\n"
+    "  사회문제 → 노동문제·청년실업·주거불안·빈부격차\n"
+    "  환경 → 기후변화·탄소중립·생태계파괴·미세먼지\n"
+    "  문화 → 대중문화·전통문화·문화산업·문화정책\n\n"
+    "### [형식·필터 규칙]\n"
+    "- 형식: 2~6글자 복합명사, 붙여쓰기(공백 없음)\n"
+    "- 제외: 제목·저자 유래어 (기술서 도구명은 허용)\n"
+    "- 제외: '과/와/의'로 이어 붙인 결합어 → 각 개념을 분리하거나 대표어 하나로 치환\n"
+    "  (예: 도망과피난 → 도망·피난 각각 / 삶의이면 → 삶·이면 분리)\n"
+    "- 제외: 동의어·유사어 중복 → 대표어 1개만 (예: 신세대+젊은세대 → 청년세대)\n"
+    "- 제외: 국가명+문학장르 결합어 (한국문학, 일본소설, 현대한국소설 등)\n"
+    "- 제외: 한정어 없는 단순 장르명 (소설, 에세이, 수필, 희곡 등; 성장소설·추리소설은 허용)\n"
+    "- 제외: 추상 접미어 결합어 끝이 의미·이면·반추·가치관·문체·정서·사유·고찰·성찰·탐색·조명·인식론·존재론인 단어\n"
+    "- 문학에서 '한국소설'·'현대한국소설'류 → 성장소설·심리소설·도시소설 등으로 치환\n"
+    "- 정보 부족 시: 상위 장르·국가명만으로 채우지 말고 분류 꼬리에서 구체 주제를 추론\n\n"
+    "[문학/에세이 그룹 전용 — 분야그룹이 '문학' 또는 '에세이'인 경우에만 적용]\n"
+    "- 비평·서사이론형 메타 표현을 키워드로 쓰지 마세요. "
+    "이용자가 검색창에 치기 어렵고, 작품 소재를 직접 가리키지도 않습니다.\n"
+    "- 금지 꼴: 문학적/비평적/미학적/서사적 + 조각·형상·탐구·사유·분석·읽기; "
+    "감정서사·정서서사·내적서사·심리서사; "
+    "언어탐구·담론탐구·서사탐구·비평탐구·서사구조·서사전략·담론분석 등\n"
+    "- 대신 작품의 구체 소재·배경·주제·기법(식민지, 성장, 가족, 전쟁, 도시, 서정, 화자, 여성, 일상 등)을 명사형으로 선택하세요.\n\n"
+    "출력: `$a키워드1 $a키워드2 ...` 한 줄만, 사고 과정 없이 최종 결과만\n"
+    "- 상위 분류명(건강·취미 등)은 구체 하위개념으로 치환\n"
+    "- 유효 키워드 부족 시에도 'OO문학·OO소설' 식 넓은 장르명만으로 채우지 말 것\n"
+    "출력 예시: '$a정서조절 $a성장소설' (쉼표·번호·설명문 금지)"
 )
-async def _openai_chat_completions(
-    api_key: str,
-    base_url: str,
-    model: str,
-    messages: list[dict[str, str]],
-    settings: Settings,
-    client: httpx.AsyncClient | None = None,
-    temperature: float = 0.2,
-    max_tokens: int = 180,
-    timeout: float = 60.0,
-) -> tuple[str, TokenUsage | None]:
-    url = f"{base_url.rstrip('/')}/chat/completions"
-    payload: dict[str, Any] = {
-        "model": model,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-    }
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    req_client = client or httpx.AsyncClient()
-    owns_client = client is None
-    try:
-        r = await req_client.post(url, json=payload, timeout=timeout, headers=headers)
-        r.raise_for_status()
-        data = r.json()
-    except httpx.HTTPError as e:
-        emsg = str(e).lower()
-        if "certificate verify failed" not in emsg and "self-signed" not in emsg:
-            raise
-        if not _can_use_insecure_fallback(base_url, settings):
-            raise
-        logger.warning("OpenAI SSL 검증 실패로 제한적 verify=False 폴백")
-        async with httpx.AsyncClient(verify=False) as insecure_client:
-            r = await insecure_client.post(url, json=payload, timeout=timeout, headers=headers)
-            r.raise_for_status()
-            data = r.json()
-    finally:
-        if owns_client:
-            await req_client.aclose()
-    content = (data.get("choices") or [{}])[0].get("message", {}).get("content")
-    usage_raw = data.get("usage") or {}
-    usage: TokenUsage | None = None
-    if usage_raw:
-        usage = TokenUsage(
-            prompt_tokens=int(usage_raw.get("prompt_tokens") or 0),
-            completion_tokens=int(usage_raw.get("completion_tokens") or 0),
-            total_tokens=int(usage_raw.get("total_tokens") or 0),
-        )
-    return (content or "").strip(), usage
 
 
-def _system_and_user_messages(
+def _build_input(
     category: str,
     title: str,
     authors: str,
     description: str,
     toc: str,
     max_keywords: int,
-) -> tuple[dict[str, str], dict[str, str]]:
+) -> str:
+    """ISBN별 동적 입력 텍스트 생성."""
     parts = [p.strip() for p in (category or "").split(">") if p.strip()]
     cat_tail = " ".join(parts[-2:]) if len(parts) >= 2 else (parts[-1] if parts else "")
-
     forbidden = build_forbidden_set(title, authors)
     forbidden_list = ", ".join(sorted(forbidden)) or "(없음)"
     category_group = get_category_group(category)
     category_prompt = get_category_prompt(category)
 
-    mode_prompt = (
-        "## 653 키워드 선정 핵심 임무\n"
-        "**이 책의 독자가 구글 검색창에 입력할 법한 1~2단어 구성의 검색 키워드를 추출하세요.**\n"
-        "실제로 검색창에 치지 않을 단어(추상어, 감상어, 책 속 사물·사례)는 제외합니다.\n\n"
-        "## 653 키워드 선정 — 3단계 판단 기준\n\n"
-        "### [판단 기준 1] 주제어인가, 내용어인가 ← 가장 중요\n"
-        "책에 '등장'하는 사물·사례·인물·현상은 내용어입니다.\n"
-        "653 키워드는 '책이 무엇을 다루는가'를 가리키는 주제어여야 합니다.\n"
-        "내용어 → 주제어 치환 필수 예시:\n"
-        "  음식물쓰레기·비닐봉투·플라스틱병 → 음식낭비·자원순환·플라스틱오염·환경실천\n"
-        "  삼성전자·네이버·카카오(사례 기업) → 대기업전략·플랫폼경제·기술혁신·IT산업\n"
-        "  아버지·어머니·형제(등장인물) → 가족관계·세대갈등·부모자식·가족돌봄\n"
-        "  신호등·버스·지하철(소재 사물) → 도시교통·대중교통·도시인프라\n"
-        "  ※ 예외: 기술서의 도구명(파이썬, 챗GPT, 엑셀, 노션)은 그 자체가 핵심 검색어 → 허용\n\n"
-        "### [판단 기준 2] 이용자가 실제로 검색창에 입력할 단어인가\n"
-        "도서관 통합검색에서 이 책을 찾는 이용자가 실제로 입력할 명사·명사구여야 합니다.\n"
-        "  ✗ 판촉·감상어(따뜻한, 감동적, 힐링) — 이용자가 검색하지 않음\n"
-        "  ✗ 비평·메타어(서사구조, 문학적탐구, 실존의미) — 검색 효용 없음\n"
-        "  ✗ 기능 약한 일반어(연구, 개론, 방법, 이론, 활동, 실천) — 검색 변별력 없음\n"
-        "  ○ 구체 주제어(번아웃, 자존감, 기후변화, 반도체산업) — 검색 효용 높음\n\n"
-        "### [판단 기준 3] 추상화 수준 조정\n"
-        "너무 구체적(사례·인스턴스 수준) → 한 단계 위 주제로 치환 (판단 기준 1 참조)\n"
-        "너무 추상적(상위 분류 수준) → 구체 하위 개념으로 치환:\n"
-        "  사회문제 → 노동문제·청년실업·주거불안·빈부격차\n"
-        "  환경 → 기후변화·탄소중립·생태계파괴·미세먼지\n"
-        "  문화 → 대중문화·전통문화·문화산업·문화정책\n\n"
-        "### [형식·필터 규칙]\n"
-        "- 형식: 2~6글자 복합명사, 붙여쓰기(공백 없음)\n"
-        "- 제외: 제목·저자 유래어 (기술서 도구명은 허용)\n"
-        "- 제외: '과/와/의'로 이어 붙인 결합어 → 각 개념을 분리하거나 대표어 하나로 치환\n"
-        "  (예: 도망과피난 → 도망·피난 각각 / 삶의이면 → 삶·이면 분리)\n"
-        "- 제외: 동의어·유사어 중복 → 대표어 1개만 (예: 신세대+젊은세대 → 청년세대)\n"
-        "- 제외: 국가명+문학장르 결합어 (한국문학, 일본소설, 현대한국소설 등)\n"
-        "- 제외: 한정어 없는 단순 장르명 (소설, 에세이, 수필, 희곡 등; 성장소설·추리소설은 허용)\n"
-        "- 제외: 추상 접미어 결합어 끝이 의미·이면·반추·가치관·문체·정서·사유·고찰·성찰·탐색·조명·인식론·존재론인 단어\n"
-        "- 문학에서 '한국소설'·'현대한국소설'류 → 성장소설·심리소설·도시소설 등으로 치환\n"
-        "- 정보 부족 시: 상위 장르·국가명만으로 채우지 말고 분류 꼬리에서 구체 주제를 추론\n"
-        f"- 목표: 중복 없이 최소 5개, 최대 {max_keywords}개\n"
+    return (
+        f"[카테고리 그룹: {category_group}]\n"
+        f"[카테고리별 지침]\n{category_prompt}\n"
+        f"### 분석 대상 도서\n"
+        f"- 분류(전체 체인): \"{category}\"\n"
+        f"- 분류(핵심 꼬리): \"{cat_tail}\"\n"
+        f"- 제목(245): \"{title}\"\n"
+        f"- 저자(100/700): \"{authors}\"\n"
+        f"- 설명: \"{description}\"\n"
+        f"- 목차: \"{toc}\"\n"
+        f"- 제외어 목록: {forbidden_list}\n\n"
+        f"### 작업 지시 (내부적으로 3단계를 거쳐 최종 결과만 출력)\n"
+        f"1단계: 이 책의 핵심 주제 영역 2~3개를 파악한다.\n"
+        f"2단계: 각 주제 영역에서 이용자가 검색창에 입력할 구체 키워드를 추출하되, "
+        f"'내용어(책에 등장하는 사물·사례)'인지 '주제어(책이 다루는 개념)'인지 점검하고 내용어는 주제어로 치환한다.\n"
+        f"3단계: 카테고리별 지침의 필터 규칙을 적용해 최종 목록을 확정한다.\n\n"
+        f"출력: `$a키워드1 $a키워드2 ...` 한 줄 (최소 5개, 최대 {max_keywords}개, 사고 과정 없이 결과만)"
     )
 
-    literature_prompt = ""
-    if category_group in ("문학", "에세이"):
-        literature_prompt = (
-            "\n[문학 그룹 전용 — 이용자 도서 검색용 소재어]\n"
-            "- 문학 도서는 비평·서사이론형 메타 표현을 키워드로 쓰지 마세요. "
-            "이용자가 검색창에 치기 어렵고, 작품 소재를 직접 가리키지도 않습니다.\n"
-            "- 금지 꼴(예시, 이 패턴에 해당하면 출력 금지): "
-            "문학적/비평적/미학적/서사적 + 조각·형상·탐구·사유·분석·읽기; "
-            "감정서사·정서서사·내적서사·심리서사; "
-            "언어탐구·담론탐구·서사탐구·비평탐구·서사구조·서사전략·담론분석 등\n"
-            "- 대신 작품에서 읽히는 구체 소재·배경·주제·기법(예: 식민지, 성장, 가족, 전쟁, 도시, 서정, 시점, 화자, 여성, 일상 등)을 명사형으로 선택하세요.\n"
+
+async def _call_responses_api(
+    input_text: str,
+    settings: Settings,
+    max_output_tokens: int = 200,
+) -> tuple[str, TokenUsage | None]:
+    """OpenAI Responses API 호출. instructions는 모듈 상수(_STATIC_INSTRUCTIONS) 사용."""
+    client = _get_openai_client(settings)
+    try:
+        resp = await client.responses.create(
+            model=settings.openai_model,
+            instructions=_STATIC_INSTRUCTIONS,
+            input=input_text,
+            max_output_tokens=max_output_tokens,
+            temperature=0.2,
         )
+    except Exception:
+        logger.exception("OpenAI Responses API 호출 실패")
+        raise
+    content = (resp.output_text or "").strip()
+    usage: TokenUsage | None = None
+    if resp.usage:
+        u = resp.usage
+        usage = TokenUsage(
+            prompt_tokens=u.input_tokens,
+            completion_tokens=u.output_tokens,
+            total_tokens=u.input_tokens + u.output_tokens,
+        )
+    return content, usage
 
-    global_principles = (
-        "## 653 필드 생성 4대 전역 원칙 (모든 분야 공통 적용)\n\n"
-        "### 1. 변별성 (Distinctiveness): 정보의 보완과 확장\n"
-        "서명(245)이나 주분류명(KDC)에 포함된 단어를 그대로 반복하지 마십시오. "
-        "제목이 지시하는 방향 너머의 하위 개념이나 연관 주제를 발굴하여 데이터의 밀도를 높이십시오.\n\n"
-        "### 2. 입상성 (Granularity): 추상의 안개를 걷어내는 구체성\n"
-        "범위가 너무 넓은 상위 개념(예: 과학, 역사, 에세이) 대신, 도서의 핵심 실체를 드러내는 "
-        "구체적인 명사(Entity)를 선택하십시오. "
-        "이용자가 검색 결과에서 이 책을 정확히 솎아낼 수 있을 만큼 날카로운 단어여야 합니다.\n\n"
-        "### 3. 의도성 (Search Intent): 이용자의 결핍과 상황에 응답\n"
-        "감상 형용사(따뜻한, 슬픈)로 표현하지 마십시오. "
-        "독자가 처한 사회적 상황, 정체성, 해결하고자 하는 문제를 키워드로 치환하십시오. "
-        "(예: ‘위로’ → ‘번아웃’, ‘마음치유’ / ‘성장’ → ‘자존감’, ‘회복탄력성’)\n"
-        "또한 책에 ‘등장’하는 사물·사례보다, 그 사물이 다루어지는 ‘주제 맥락’을 선택하십시오. "
-        "(예: ‘음식물쓰레기’ → ‘음식낭비’ 또는 ‘자원순환’ / ‘삼성전자’ → ‘대기업전략’)\n\n"
-        "### 4. 시의성 (Timeliness): 고정된 체계를 넘는 살아있는 언어\n"
-        "도서관의 통제어 체계에만 갇히지 마십시오. "
-        "현재 이용자들이 해당 주제를 부를 때 사용하는 가장 대중적이고 시의성 있는 용어(신조어, 외래어 포함)를 "
-        "적극적으로 반영하십시오. (예: ‘거대언어모델’ 옆에 ‘LLM’ 병기)\n\n"
-    )
 
-    system_msg = {
-        "role": "system",
-        "content": (
-            "당신은 KORMARC 작성 경험이 풍부한 도서관 메타데이터 전문가입니다.\n"
-            "주어진 도서 정보를 바탕으로 MARC 653 자유주제어를 생성하세요.\n\n"
-            f"{global_principles}"
-            f"{mode_prompt}{literature_prompt}\n"
-            f"카테고리 그룹: {category_group}\n"
-            f"[카테고리별 지침]\n{category_prompt}\n"
-            "출력: `$a키워드1 $a키워드2 ...` 한 줄만, 사고 과정 없이 최종 결과만\n"
-            "- 상위 분류명(건강·취미 등)은 구체 하위개념으로 치환\n"
-            "- 유효 키워드 부족 시에도 ‘OO문학·OO소설’ 식 넓은 장르명만으로 채우지 말 것\n\n"
-            "출력 예시: ‘$a정서조절 $a성장소설’ (쉼표·번호·설명문 금지)"
-        ),
-    }
-    user_msg = {
-        "role": "user",
-        "content": (
-            f"### 분석 대상 도서\n"
-            f"- 분류(전체 체인): \"{category}\"\n"
-            f"- 분류(핵심 꼬리): \"{cat_tail}\"\n"
-            f"- 제목(245): \"{title}\"\n"
-            f"- 저자(100/700): \"{authors}\"\n"
-            f"- 설명: \"{description}\"\n"
-            f"- 목차: \"{toc}\"\n"
-            f"- 제외어 목록: {forbidden_list}\n\n"
-            f"### 작업 지시 (내부적으로 3단계를 거쳐 최종 결과만 출력)\n"
-            f"1단계: 이 책의 핵심 주제 영역 2~3개를 파악한다.\n"
-            f"2단계: 각 주제 영역에서 이용자가 검색창에 입력할 구체 키워드를 추출하되, "
-            f"'내용어(책에 등장하는 사물·사례)'인지 '주제어(책이 다루는 개념)'인지 점검하고 내용어는 주제어로 치환한다.\n"
-            f"3단계: 카테고리별 지침의 필터 규칙을 적용해 최종 목록을 확정한다.\n\n"
-            f"출력: `$a키워드1 $a키워드2 ...` 한 줄 (최소 5개, 최대 {max_keywords}개, 사고 과정 없이 결과만)"
-        ),
-    }
-    return system_msg, user_msg
 
 
 def parse_keyword_line(raw: str) -> list[str]:
@@ -737,7 +680,7 @@ async def generate_653_subfield_line(
     max_keywords: int = 7,
     min_keywords: int = 5,
     settings: Settings | None = None,
-    client: httpx.AsyncClient | None = None,
+    client: httpx.AsyncClient | None = None,  # 하위호환: 무시됨
 ) -> tuple[str | None, str | None, TokenUsage | None, Field653Quality | None]:
     """
     Returns (subfield_line, error, token_usage, quality).
@@ -754,21 +697,9 @@ async def generate_653_subfield_line(
     description = meta.description
     toc = meta.toc
 
-    sys_m, user_m = _system_and_user_messages(
-        category, title, authors, description, toc, max_keywords
-    )
+    input_text = _build_input(category, title, authors, description, toc, max_keywords)
     try:
-        raw, usage = await _openai_chat_completions(
-            s.openai_api_key,
-            s.openai_base_url,
-            s.openai_model,
-            [sys_m, user_m],
-            settings=s,
-            client=client,
-            temperature=0.2,
-            max_tokens=200,
-            timeout=60.0,
-        )
+        raw, usage = await _call_responses_api(input_text, s)
     except Exception as e:
         logger.exception("OpenAI 653 호출 실패")
         return None, str(e), None, None

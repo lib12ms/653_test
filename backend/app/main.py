@@ -99,7 +99,6 @@ async def _build_response_from_meta(
         meta,
         max_keywords=max_kw,
         min_keywords=min_kw,
-        client=client,
     )
     if err or not raw_line:
         return Field653Response(

@@ -99,7 +99,6 @@ async def process_isbn(
                 max_keywords=settings.max_keywords_653,
                 min_keywords=settings.min_keywords_653,
                 settings=settings,
-                client=client,
             )
             if err:
                 result["오류"] = f"AI 오류: {err}"
