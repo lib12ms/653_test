@@ -7,11 +7,13 @@ import os
 from datetime import datetime
 
 import gspread
-from google.oauth2.service_account import Credentials
 
 logger = logging.getLogger(__name__)
 
-_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+_SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive.readonly",
+]
 
 
 def _get_sheet() -> gspread.Worksheet:
@@ -19,8 +21,7 @@ def _get_sheet() -> gspread.Worksheet:
     if not credentials_json:
         raise ValueError("GOOGLE_SERVICE_ACCOUNT 환경변수가 설정되지 않았습니다.")
     credentials_dict = json.loads(credentials_json)
-    credentials = Credentials.from_service_account_info(credentials_dict, scopes=_SCOPES)
-    client = gspread.authorize(credentials)
+    client = gspread.service_account_from_dict(credentials_dict, scopes=_SCOPES)
     sheet_id = os.getenv("GOOGLE_SHEETS_ID")
     if not sheet_id:
         raise ValueError("GOOGLE_SHEETS_ID 환경변수가 설정되지 않았습니다.")
