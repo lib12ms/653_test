@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import ai_service
 from .config import get_settings
-from .sheets_service import save_golden_data
+from .sheets_service import diagnose_sheets, save_golden_data
 from .fetcher import fetch_aladin_for_653, fetch_secondary_metadata_hint, merge_aladin_with_nlk
 from .models import (
     AladinMetadata653,
@@ -170,6 +170,12 @@ async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
     if response.success:
         cache.set(cache_key, response)
     return response
+
+
+@app.get("/api/sheets-check")
+async def sheets_check() -> dict:
+    """Google Sheets 연결 진단 (임시 — 확인 후 제거)."""
+    return diagnose_sheets()
 
 
 @app.post("/api/save-golden")

@@ -28,6 +28,35 @@ def _get_sheet() -> gspread.Worksheet:
     return client.open_by_key(sheet_id).sheet1
 
 
+def diagnose_sheets() -> dict:
+    """연결 상태 진단 — /api/sheets-check 에서 호출."""
+    import traceback
+    result: dict = {
+        "env_account": bool(os.getenv("GOOGLE_SERVICE_ACCOUNT")),
+        "env_sheet_id": os.getenv("GOOGLE_SHEETS_ID", ""),
+        "json_parse": False,
+        "client_ok": False,
+        "open_ok": False,
+        "error": "",
+    }
+    try:
+        credentials_json = os.getenv("GOOGLE_SERVICE_ACCOUNT", "")
+        credentials_dict = json.loads(credentials_json)
+        result["json_parse"] = True
+        result["sa_email"] = credentials_dict.get("client_email", "")
+
+        client = gspread.service_account_from_dict(credentials_dict, scopes=_SCOPES)
+        result["client_ok"] = True
+
+        sheet_id = os.getenv("GOOGLE_SHEETS_ID", "")
+        sh = client.open_by_key(sheet_id)
+        result["open_ok"] = True
+        result["sheet_title"] = sh.title
+    except Exception as e:
+        result["error"] = traceback.format_exc()
+    return result
+
+
 def save_golden_data(data: dict) -> tuple[bool, str]:
     try:
         sheet = _get_sheet()
