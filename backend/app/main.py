@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import ai_service
 from .config import get_settings
+from .sheets_service import save_golden_data
 from .fetcher import fetch_aladin_for_653, fetch_secondary_metadata_hint, merge_aladin_with_nlk
 from .models import (
     AladinMetadata653,
@@ -169,6 +170,15 @@ async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
     if response.success:
         cache.set(cache_key, response)
     return response
+
+
+@app.post("/api/save-golden")
+async def save_golden(data: dict) -> dict:
+    """사서가 확정한 653 키워드를 Google Sheets에 저장합니다."""
+    success = save_golden_data(data)
+    if success:
+        return {"success": True}
+    return {"success": False, "error": "저장 실패 (서버 로그 확인)"}
 
 
 @app.post("/api/field653/preview", response_model=Field653Response)

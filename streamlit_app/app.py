@@ -61,7 +61,7 @@ def _render_nlk_info(data: dict[str, Any]) -> None:
         st.caption(f"보강 출처: {src}")
 
 
-def _render_editable_653(data: dict[str, Any], key_prefix: str) -> None:
+def _render_editable_653(data: dict[str, Any], key_prefix: str, isbn: str = "") -> None:
     st.subheader("653 결과")
     keywords = [str(x).strip() for x in (data.get("keywords") or []) if str(x).strip()]
     default_text = "\n".join(keywords)
@@ -90,6 +90,26 @@ def _render_editable_653(data: dict[str, Any], key_prefix: str) -> None:
 
     with st.expander("원본 API 응답"):
         st.json(data)
+
+    st.divider()
+    if st.button("골든 데이터로 확정 저장", type="primary", key=f"{key_prefix}_save_golden"):
+        aladin = data.get("aladin") or {}
+        save_data = {
+            "isbn": isbn or aladin.get("isbn", ""),
+            "title": aladin.get("title", ""),
+            "authors": aladin.get("authors", ""),
+            "category": aladin.get("category", ""),
+            "category_group": "",
+            "gpt_result": data.get("tag_653", ""),
+            "golden_result": edited_tag,
+            "is_modified": edited_tag != data.get("tag_653", ""),
+            "mode": "단건조회",
+        }
+        save_result, err = post_json("/api/save-golden", save_data)
+        if err or not (save_result or {}).get("success"):
+            st.error(f"저장 실패: {err or save_result}")
+        else:
+            st.success("골든 데이터셋에 저장되었습니다!")
 
     dbg = data.get("preprocess_debug") or {}
     if dbg:
@@ -177,7 +197,7 @@ with tab_single:
     result_data = st.session_state.get("isbn_result_data")
     if result_data:
         if result_data.get("success") and result_data.get("tag_653"):
-            _render_editable_653(result_data, "isbn")
+            _render_editable_653(result_data, "isbn", isbn=isbn.strip())
         if result_data.get("error"):
             st.warning(result_data["error"])
 
