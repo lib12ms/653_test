@@ -175,10 +175,10 @@ async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
 @app.post("/api/save-golden")
 async def save_golden(data: dict) -> dict:
     """사서가 확정한 653 키워드를 Google Sheets에 저장합니다."""
-    success = save_golden_data(data)
+    success, err_msg = save_golden_data(data)
     if success:
         return {"success": True}
-    return {"success": False, "error": "저장 실패 (서버 로그 확인)"}
+    return {"success": False, "error": err_msg}
 
 
 @app.post("/api/field653/preview", response_model=Field653Response)

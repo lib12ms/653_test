@@ -28,7 +28,7 @@ def _get_sheet() -> gspread.Worksheet:
     return client.open_by_key(sheet_id).sheet1
 
 
-def save_golden_data(data: dict) -> bool:
+def save_golden_data(data: dict) -> tuple[bool, str]:
     try:
         sheet = _get_sheet()
         row = [
@@ -44,7 +44,8 @@ def save_golden_data(data: dict) -> bool:
             data.get("mode", ""),
         ]
         sheet.append_row(row)
-        return True
-    except Exception:
+        return True, ""
+    except Exception as e:
+        msg = f"{type(e).__name__}: {e}"
         logger.exception("골든 데이터 저장 실패")
-        return False
+        return False, msg
