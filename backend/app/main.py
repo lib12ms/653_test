@@ -132,11 +132,13 @@ async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
     s = get_settings()
     http_client: httpx.AsyncClient = app.state.http_client
     cache: _TtlCache = app.state.isbn_cache
+    conv_key = (s.kormarc_agent_conv_id or "").strip() or "instructions"
     cache_key = (
         f"v{str(s.field653_cache_bundle_version).strip() or '1'}|"
         f"{req.isbn.strip()}|{s.openai_model}|"
         f"{s.max_keywords_653}|{s.min_keywords_653}|"
-        f"k{int(bool(s.kpipa_enable and s.kpipa_api_key))}"
+        f"k{int(bool(s.kpipa_enable and s.kpipa_api_key))}|"
+        f"agent:{conv_key}"
     )
     cached = cache.get(cache_key)
     if cached is not None:

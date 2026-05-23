@@ -1,6 +1,7 @@
 """환경·시스템 설정(OPENAI, 알라딘, 모델명 등)."""
 from functools import lru_cache
 from pathlib import Path
+from typing import Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -21,6 +22,13 @@ class Settings(BaseSettings):
     openai_base_url: str = Field(
         default="https://api.openai.com/v1",
         description="OpenAI 호환 API 베이스 URL",
+    )
+    kormarc_agent_conv_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "KORMARC 653 agent용 OpenAI Conversation ID (conv_…). "
+            "미설정 시 매 요청 instructions fallback. initialize_agent.py로 생성."
+        ),
     )
     aladin_item_lookup_url: str = Field(
         default="https://www.aladin.co.kr/ttb/api/ItemLookUp.aspx",
