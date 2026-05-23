@@ -26,8 +26,8 @@ class Settings(BaseSettings):
     kormarc_agent_conv_id: Optional[str] = Field(
         default=None,
         description=(
-            "KORMARC 653 agent용 OpenAI Conversation ID (conv_…). "
-            "미설정 시 매 요청 instructions fallback. initialize_agent.py로 생성."
+            "[미사용] 구 Conversation 방식 conv ID. "
+            "턴 누적 문제로 instructions 방식으로 전환됨. 설정해도 무시됨."
         ),
     )
     aladin_item_lookup_url: str = Field(

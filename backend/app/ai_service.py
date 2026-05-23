@@ -495,11 +495,6 @@ def _build_input(
     )
 
 
-def _resolve_kormarc_conversation_id(settings: Settings) -> str | None:
-    cid = (settings.kormarc_agent_conv_id or "").strip()
-    return cid or None
-
-
 async def _call_learned_agent_api(
     input_text: str,
     settings: Settings,
@@ -507,25 +502,18 @@ async def _call_learned_agent_api(
 ) -> tuple[str, TokenUsage | None]:
     """
     OpenAI Responses API 호출.
-    kormarc_agent_conv_id가 있으면 Conversation에 고정된 developer 지침 사용,
-    없으면 instructions=_STATIC_INSTRUCTIONS fallback.
+    instructions=_STATIC_INSTRUCTIONS 방식으로 매 요청마다 지침을 직접 전송.
+    OpenAI 자동 프롬프트 캐싱으로 반복 전송 비용은 절감됨.
     """
     client = _get_openai_client(settings)
-    conv_id = _resolve_kormarc_conversation_id(settings)
-    create_kwargs: dict = {
-        "model": settings.openai_model,
-        "input": input_text,
-        "max_output_tokens": max_output_tokens,
-        "temperature": 0.2,
-    }
-    if conv_id:
-        create_kwargs["conversation"] = conv_id
-        logger.debug("Responses API: conversation=%s", conv_id)
-    else:
-        create_kwargs["instructions"] = _STATIC_INSTRUCTIONS
-        logger.debug("Responses API: instructions fallback (conv_id 미설정)")
     try:
-        resp = await client.responses.create(**create_kwargs)
+        resp = await client.responses.create(
+            model=settings.openai_model,
+            instructions=_STATIC_INSTRUCTIONS,
+            input=input_text,
+            max_output_tokens=max_output_tokens,
+            temperature=0.2,
+        )
     except Exception:
         logger.exception("OpenAI Responses API 호출 실패")
         raise
