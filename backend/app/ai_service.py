@@ -495,7 +495,6 @@ async def _call_learned_agent_api(
             instructions=_STATIC_INSTRUCTIONS,
             input=input_text,
             max_output_tokens=max_output_tokens,
-            temperature=0.2,
         )
     except Exception:
         logger.exception("OpenAI Responses API 호출 실패")
