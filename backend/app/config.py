@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     aladin_ttb_key: str = Field(default="", description="알라딘 TTB API 키")
     openai_api_key: str = Field(default="", description="OpenAI API 키")
-    openai_model: str = Field(default="gpt-5", description="653 생성용 채팅 모델")
+    openai_model: str = Field(default="gpt-4o", description="653 생성용 채팅 모델")
     openai_base_url: str = Field(
         default="https://api.openai.com/v1",
         description="OpenAI 호환 API 베이스 URL",
