@@ -15,25 +15,16 @@ def merge_aladin_with_nlk(
     nlk: NlkMetadataHint,
     settings: Settings | None = None,
     secondary_source: str = "none",
-    naver_description: str = "",
 ) -> AladinMetadata653:
     """
     알라딘을 주 정보원으로 두고 보강한다.
     - secondary_source == 'kpipa': KPIPA에서 가져온 목차(nlk.toc)만 알라딘 목차에 덧붙임.
-    - naver_description: 알라딘 설명이 naver_description_min_chars 미만이면 보완.
     - 'none': 알라딘만(전처리만).
     """
     s = get_settings() if settings is None else settings
     merged_category = clean_category_for_ai((base.category or "").strip(), s.category_remove_words)
     merged_desc = clean_description_for_ai((base.description or "").strip())
     merged_toc = clean_toc_for_ai((base.toc or "").strip())
-
-    if naver_description and len((base.description or "").strip()) < s.naver_description_min_chars:
-        naver_desc_cleaned = clean_description_for_ai(naver_description)
-        if naver_desc_cleaned:
-            merged_desc = (
-                f"{merged_desc}\n{naver_desc_cleaned}".strip() if merged_desc else naver_desc_cleaned
-            )
 
     if secondary_source == "kpipa" and (nlk.toc or "").strip():
         kt = clean_toc_for_ai(nlk.toc)
