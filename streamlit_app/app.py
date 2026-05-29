@@ -46,21 +46,6 @@ def post_json(path: str, body: dict[str, Any]) -> tuple[dict[str, Any] | None, s
         return None, str(e)
 
 
-def _render_nlk_info(data: dict[str, Any]) -> None:
-    """백엔드 `nlk_hint` 필드명은 유지하나, 본선에서는 KPIPA 목차만 전달될 수 있음."""
-    hint = data.get("nlk_hint") or {}
-    src = data.get("hint_source") or ""
-    toc = (hint.get("toc") or "").strip()
-    if src == "kpipa" and toc:
-        st.caption(f"KPIPA 목차 병합 | 약 **{len(toc)}**자 (미리보기: {toc[:120]}{'…' if len(toc) > 120 else ''})")
-        return
-    if src == "kpipa":
-        st.caption("KPIPA | 목차 힌트 없음(해당 ISBN 미등록 또는 비활성)")
-        return
-    if src:
-        st.caption(f"보강 출처: {src}")
-
-
 def _render_editable_653(data: dict[str, Any], key_prefix: str, isbn: str = "") -> None:
     st.subheader("653 결과")
     keywords = [str(x).strip() for x in (data.get("keywords") or []) if str(x).strip()]
@@ -85,8 +70,6 @@ def _render_editable_653(data: dict[str, Any], key_prefix: str, isbn: str = "") 
 
     st.markdown("**653 (MRK)**")
     st.code(edited_tag, language="text")
-
-    _render_nlk_info(data)
 
     with st.expander("원본 API 응답"):
         st.json(data)

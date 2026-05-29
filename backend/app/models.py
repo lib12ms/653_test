@@ -104,6 +104,7 @@ class Field653Response(BaseModel):
         default=None,
         description="보강 출처: kpipa(목차 병합됨) | None",
     )
+    kpipa_raw: dict[str, Any] | None = None
     preprocess_debug: dict[str, str] | None = None
 
 

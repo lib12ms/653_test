@@ -93,12 +93,12 @@ async def fetch_kpipa_hint_by_isbn(
     isbn: str,
     settings: Settings | None = None,
     client: httpx.AsyncClient | None = None,
-) -> NlkMetadataHint:
-    """KPIPA getBookDetail — 응답 중 ONIX 목차(TextContent 04)만 사용."""
+) -> tuple[NlkMetadataHint, dict[str, Any] | None]:
+    """KPIPA getBookDetail — 응답 중 ONIX 목차(TextContent 04)만 사용. raw 응답도 함께 반환."""
     s = get_settings() if settings is None else settings
     isbn13 = normalize_isbn13(isbn)
     if not isbn13 or not s.kpipa_enable or not s.kpipa_api_key:
-        return NlkMetadataHint()
+        return NlkMetadataHint(), None
 
     base = s.kpipa_api_base_url.rstrip("/")
     url = f"{base}/api/openApi/metaInfoSvc/getBookDetail"
@@ -114,18 +114,18 @@ async def fetch_kpipa_hint_by_isbn(
             settings=s,
         )
         if not isinstance(raw, dict):
-            return NlkMetadataHint()
+            return NlkMetadataHint(), None
         resp = raw.get("response")
         if isinstance(resp, dict):
             res = resp.get("result")
             if isinstance(res, dict):
                 code = str(res.get("resultCode", "")).upper()
                 if code and code != "INFO-000":
-                    return NlkMetadataHint()
-        return parse_kpipa_toc_only(raw)
+                    return NlkMetadataHint(), raw
+        return parse_kpipa_toc_only(raw), raw
     except Exception as e:
         logger.warning("KPIPA getBookDetail 실패: %s", e)
-        return NlkMetadataHint()
+        return NlkMetadataHint(), None
     finally:
         if owns_client:
             await req_client.aclose()
@@ -135,21 +135,21 @@ async def fetch_secondary_metadata_hint(
     isbn: str,
     settings: Settings | None = None,
     client: httpx.AsyncClient | None = None,
-) -> tuple[NlkMetadataHint, str]:
+) -> tuple[NlkMetadataHint, str, dict[str, Any] | None]:
     """
     알라딘 외 보강: KPIPA에서 목차만 조회(앱 본선에서 NLK 미사용).
-    반환: (힌트, 출처) — 'kpipa'(목차 있음) | 'none'.
+    반환: (힌트, 출처, kpipa_raw) — 출처: 'kpipa'(목차 있음) | 'none'.
     """
     s = get_settings() if settings is None else settings
     req = client or httpx.AsyncClient()
     owns = client is None
     try:
         if not (s.kpipa_enable and s.kpipa_api_key):
-            return NlkMetadataHint(), "none"
-        hint = await fetch_kpipa_hint_by_isbn(isbn, settings=s, client=req)
+            return NlkMetadataHint(), "none", None
+        hint, kpipa_raw = await fetch_kpipa_hint_by_isbn(isbn, settings=s, client=req)
         if (hint.toc or "").strip():
-            return hint, "kpipa"
-        return NlkMetadataHint(), "none"
+            return hint, "kpipa", kpipa_raw
+        return NlkMetadataHint(), "none", kpipa_raw
     finally:
         if owns:
             await req.aclose()

@@ -95,6 +95,7 @@ async def _build_response_from_meta(
     preprocess_debug: dict[str, str] | None = None,
     client: httpx.AsyncClient | None = None,
     hint_source: str | None = None,
+    kpipa_raw: dict | None = None,
 ) -> Field653Response:
     raw_line, err, token_usage, _quality = await ai_service.generate_653_subfield_line(
         meta,
@@ -109,6 +110,7 @@ async def _build_response_from_meta(
             aladin=meta,
             nlk_hint=nlk_hint,
             hint_source=hint_source,
+            kpipa_raw=kpipa_raw,
             preprocess_debug=preprocess_debug,
         )
     tag = ai_service.build_marc_653_line(raw_line)
@@ -122,6 +124,7 @@ async def _build_response_from_meta(
         aladin=meta,
         nlk_hint=nlk_hint,
         hint_source=hint_source,
+        kpipa_raw=kpipa_raw,
         preprocess_debug=preprocess_debug,
     )
 
@@ -149,7 +152,7 @@ async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
             req.isbn, settings=s, include_debug=True, client=http_client
         )
         secondary_task = fetch_secondary_metadata_hint(req.isbn, settings=s, client=http_client)
-        (base_meta, preprocess_debug), (nlk_hint, hint_src) = await asyncio.gather(
+        (base_meta, preprocess_debug), (nlk_hint, hint_src, kpipa_raw) = await asyncio.gather(
             base_meta_task, secondary_task
         )
     except ValueError as e:
@@ -168,6 +171,7 @@ async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
         preprocess_debug=preprocess_debug,
         client=http_client,
         hint_source=hint_src if hint_src != "none" else None,
+        kpipa_raw=kpipa_raw,
     )
     if response.success:
         cache.set(cache_key, response)
