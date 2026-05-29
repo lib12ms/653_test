@@ -39,19 +39,22 @@ def _get_openai_client(settings: Settings) -> AsyncOpenAI:
 CATEGORY_PROMPTS = {
     "문학": (
         "이 책은 문학 작품입니다.\n"
-        "- 감상어·단독추상명사(따뜻한·여운·감동·운명·인연·만남·기억·삶·사랑·희망·그리움) 금지.\n"
-        "- 소재·배경보다 문학 장르·테마로 치환.\n"
-        "  예) 어린시절·성장기→성장소설 / 가족이야기→가족소설·가족관계\n"
-        "      사랑이야기→연애소설·첫사랑 / 죽음·상실→죽음서사·애도\n"
-        "      사회비판→사회소설·계급갈등 / 전쟁경험→전쟁소설·반전\n"
-        "- [감상어만 있을 때 발굴 순서]\n"
-        "  ① 분류 꼬리 하위 장르명(성장소설·심리소설·역사소설·가족소설·추리소설)\n"
-        "  ② 제목이 함의하는 독자 상황·정체성(제목 단어 반복 금지, 맥락 추론)\n"
-        "  ③ 한 단계 구체화된 형식(단순 소설·에세이 금지, 수식어 필수)\n"
-        "- 배경키워드(시대·지역)는 설명·목차 명시 근거 있을 때만. 추정 금지.\n"
-        "  예) 6·25전쟁·일제강점기·1980년대광주·조선시대·경성·위안부·이민자\n"
-        "- 문학기법도 명사형으로: 여성서사·실존주의·식민지문학\n"
-        "- 평론문구(사랑의형상·감정조각·문학적탐구)는 명사형 주제어로 치환.\n"
+        "아래 5가지 유형 안에서만 키워드를 추출하라.\n"
+        "각 유형은 근거가 있을 때만 생성. 근거 없으면 해당 유형 생략.\n\n"
+        "유형A 장르명 [분류에서 반드시 1개 추출]\n"
+        "  분류 꼬리에서 하위 장르명 추출. 단순 소설·에세이 금지. 수식어 필수.\n"
+        "  예) 성장소설·심리소설·역사소설·페미니즘소설·추리소설\n\n"
+        "유형B 테마·갈등 [설명·목차 명시 근거 있을 때만]\n"
+        "  예) 계급갈등·세대갈등·정체성혼란·트라우마·애도\n\n"
+        "유형C 시대·배경 [설명·목차에 명시된 경우만. 추정 금지]\n"
+        "  예) 일제강점기·5·18·조선시대·냉전시대\n\n"
+        "유형D 독자군·사회상황 [설명에 명시된 경우만. 추정 금지]\n"
+        "  예) 중년여성·이민자가족·비혼여성·탈북자\n\n"
+        "유형E 트렌드어 [설명에 명시된 경우만. 추정 금지]\n"
+        "  예) 퀴어문학·에코페미니즘·N포세대\n\n"
+        "금지: 감상어(따뜻한·여운·감동)·단독추상명사(삶·사랑·희망·그리움)\n"
+        "금지: 평론·메타표현(문학적탐구·서사구조·감정조각)\n"
+        "근거 없는 슬롯은 비울 것. 억지로 채우지 말 것.\n"
     ),
     "에세이": (
         "이 책은 에세이입니다.\n"
@@ -656,11 +659,13 @@ async def generate_653_subfield_line(
     forbidden = build_forbidden_set(title, authors)
     kws = parse_keyword_line(raw)
     ai_output = "".join(f"$a{kw}" for kw in kws if should_keep_keyword(kw, forbidden))
+    category_group = get_category_group(category)
+    effective_min = 3 if category_group == "문학" else min_keywords
     subfield_line, quality = finalize_653(
         ai_output,
         forbidden,
         max_keywords=max_keywords,
-        min_keywords=min_keywords,
+        min_keywords=effective_min,
         category=category,
         toc=toc,
         description=description,
