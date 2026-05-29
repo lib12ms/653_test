@@ -48,6 +48,24 @@ def post_json(path: str, body: dict[str, Any]) -> tuple[dict[str, Any] | None, s
 
 def _render_editable_653(data: dict[str, Any], key_prefix: str, isbn: str = "") -> None:
     st.subheader("653 결과")
+
+    # ── 메타 정보 배지 (크롤링 보완 / KPIPA 목차 병합) ──────────────────────
+    dbg = data.get("preprocess_debug") or {}
+    if dbg.get("crawl_used") == "True":
+        crawled_fields = []
+        if dbg.get("crawl_desc_filled") == "True":
+            crawled_fields.append("설명")
+        if dbg.get("crawl_toc_filled") == "True":
+            crawled_fields.append("목차")
+        if crawled_fields:
+            st.info(f"알라딘 상세페이지 크롤링으로 **{', '.join(crawled_fields)}** 보완됨")
+        else:
+            st.warning("알라딘 상세페이지 크롤링 시도했으나 내용을 찾지 못했습니다.")
+
+    if data.get("hint_source") == "kpipa":
+        st.info("KPIPA 목차가 병합되었습니다.")
+
+    # ── 키워드 편집 ──────────────────────────────────────────────────────────
     keywords = [str(x).strip() for x in (data.get("keywords") or []) if str(x).strip()]
     default_text = "\n".join(keywords)
     state_key = f"{key_prefix}_kw_edit"
@@ -76,10 +94,9 @@ def _render_editable_653(data: dict[str, Any], key_prefix: str, isbn: str = "") 
         prompt_t = token_usage.get("prompt_tokens", 0)
         completion_t = token_usage.get("completion_tokens", 0)
         total_t = token_usage.get("total_tokens", 0)
-        col_p, col_c, col_t = st.columns(3)
-        col_p.metric("프롬프트 토큰", f"{prompt_t:,}")
-        col_c.metric("완성 토큰", f"{completion_t:,}")
-        col_t.metric("합계 토큰", f"{total_t:,}")
+        st.caption(
+            f"토큰 사용량 — 프롬프트: {prompt_t:,} / 완성: {completion_t:,} / 합계: {total_t:,}"
+        )
 
     with st.expander("원본 API 응답"):
         st.json(data)
@@ -88,7 +105,7 @@ def _render_editable_653(data: dict[str, Any], key_prefix: str, isbn: str = "") 
     if st.button("골든 데이터로 확정 저장", type="primary", key=f"{key_prefix}_save_golden"):
         aladin = data.get("aladin") or {}
         save_data = {
-            "isbn": isbn or aladin.get("isbn", ""),
+            "isbn": isbn,
             "title": aladin.get("title", ""),
             "authors": aladin.get("authors", ""),
             "category": aladin.get("category", ""),
@@ -104,20 +121,7 @@ def _render_editable_653(data: dict[str, Any], key_prefix: str, isbn: str = "") 
         else:
             st.success("골든 데이터셋에 저장되었습니다!")
 
-    dbg = data.get("preprocess_debug") or {}
     if dbg:
-        # 크롤링 보완 배지
-        if dbg.get("crawl_used") == "True":
-            crawled_fields = []
-            if dbg.get("crawl_desc_filled") == "True":
-                crawled_fields.append("설명")
-            if dbg.get("crawl_toc_filled") == "True":
-                crawled_fields.append("목차")
-            if crawled_fields:
-                st.info(f"알라딘 상세페이지 크롤링으로 **{', '.join(crawled_fields)}** 보완됨")
-            else:
-                st.warning("알라딘 상세페이지 크롤링 시도했으나 내용을 찾지 못했습니다.")
-
         with st.expander("전처리 전/후 비교"):
             if dbg.get("crawl_used") == "True":
                 crawled_labels = []
@@ -206,11 +210,13 @@ with tab_single:
                 st.error(err)
             elif data:
                 st.session_state["isbn_result_data"] = data
+                st.session_state["isbn_queried"] = isbn.strip()
 
     result_data = st.session_state.get("isbn_result_data")
     if result_data:
         if result_data.get("success") and result_data.get("tag_653"):
-            _render_editable_653(result_data, "isbn", isbn=isbn.strip())
+            queried_isbn = st.session_state.get("isbn_queried", isbn.strip())
+            _render_editable_653(result_data, "isbn", isbn=queried_isbn)
         if result_data.get("error"):
             st.warning(result_data["error"])
 
@@ -292,8 +298,8 @@ with tab_eval:
             for i, isbn_item in enumerate(lines):
                 data, err = post_json("/api/field653", {"isbn": isbn_item})
                 aladin = (data or {}).get("aladin") or {}
-                hint = (data or {}).get("nlk_hint") or {}
-                toc_s = (hint.get("toc") or "").strip()
+                kpipa_hint = (data or {}).get("nlk_hint") or {}
+                toc_s = (kpipa_hint.get("toc") or "").strip()
                 base = {
                     "ISBN": isbn_item,
                     "제목": aladin.get("title", ""),
