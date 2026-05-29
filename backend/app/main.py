@@ -14,7 +14,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import ai_service
 from .config import get_settings
 from .sheets_service import diagnose_sheets, save_golden_data
-from .fetcher import fetch_aladin_for_653, fetch_secondary_metadata_hint, merge_aladin_with_nlk
+from .fetcher import (
+    fetch_aladin_for_653,
+    fetch_naver_book,
+    fetch_secondary_metadata_hint,
+    merge_aladin_with_nlk,
+    parse_naver_book_description,
+)
 from .models import (
     AladinMetadata653,
     Field653FromIsbnRequest,
@@ -96,6 +102,7 @@ async def _build_response_from_meta(
     client: httpx.AsyncClient | None = None,
     hint_source: str | None = None,
     kpipa_raw: dict | None = None,
+    naver_raw: dict | None = None,
 ) -> Field653Response:
     raw_line, err, token_usage, _quality = await ai_service.generate_653_subfield_line(
         meta,
@@ -111,6 +118,7 @@ async def _build_response_from_meta(
             nlk_hint=nlk_hint,
             hint_source=hint_source,
             kpipa_raw=kpipa_raw,
+            naver_raw=naver_raw,
             preprocess_debug=preprocess_debug,
         )
     tag = ai_service.build_marc_653_line(raw_line)
@@ -125,6 +133,7 @@ async def _build_response_from_meta(
         nlk_hint=nlk_hint,
         hint_source=hint_source,
         kpipa_raw=kpipa_raw,
+        naver_raw=naver_raw,
         preprocess_debug=preprocess_debug,
     )
 
@@ -141,6 +150,7 @@ async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
         f"{req.isbn.strip()}|{s.openai_model}|"
         f"{s.max_keywords_653}|{s.min_keywords_653}|"
         f"k{int(bool(s.kpipa_enable and s.kpipa_api_key))}|"
+        f"n{int(bool(s.naver_enable and s.naver_client_id and s.naver_client_secret))}|"
         f"agent:{conv_key}"
     )
     cached = cache.get(cache_key)
@@ -152,8 +162,9 @@ async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
             req.isbn, settings=s, include_debug=True, client=http_client
         )
         secondary_task = fetch_secondary_metadata_hint(req.isbn, settings=s, client=http_client)
-        (base_meta, preprocess_debug), (nlk_hint, hint_src, kpipa_raw) = await asyncio.gather(
-            base_meta_task, secondary_task
+        naver_task = fetch_naver_book(req.isbn, settings=s, client=http_client)
+        (base_meta, preprocess_debug), (nlk_hint, hint_src, kpipa_raw), naver_raw = (
+            await asyncio.gather(base_meta_task, secondary_task, naver_task)
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -161,8 +172,11 @@ async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
         logger.exception("알라딘 조회")
         raise HTTPException(status_code=502, detail=f"알라딘 API 오류: {e}") from e
 
+    naver_desc = parse_naver_book_description(naver_raw) if naver_raw else ""
     merge_src = "kpipa" if hint_src == "kpipa" else "none"
-    meta = merge_aladin_with_nlk(base_meta, nlk_hint, settings=s, secondary_source=merge_src)
+    meta = merge_aladin_with_nlk(
+        base_meta, nlk_hint, settings=s, secondary_source=merge_src, naver_description=naver_desc
+    )
     response = await _build_response_from_meta(
         meta,
         s.max_keywords_653,
@@ -172,6 +186,7 @@ async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
         client=http_client,
         hint_source=hint_src if hint_src != "none" else None,
         kpipa_raw=kpipa_raw,
+        naver_raw=naver_raw,
     )
     if response.success:
         cache.set(cache_key, response)

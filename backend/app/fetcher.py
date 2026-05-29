@@ -17,13 +17,16 @@ from .kpipa_client import (
     fetch_secondary_metadata_hint,
 )
 from .metadata_merge import merge_aladin_with_nlk
+from .naver_client import fetch_naver_book, parse_naver_book_description
 from .nlk_client import fetch_nlk_hint_by_isbn
 
 __all__ = [
     "extract_kpipa_book_payload",
     "fetch_aladin_for_653",
     "fetch_kpipa_hint_by_isbn",
+    "fetch_naver_book",
     "fetch_nlk_hint_by_isbn",
     "fetch_secondary_metadata_hint",
     "merge_aladin_with_nlk",
+    "parse_naver_book_description",
 ]

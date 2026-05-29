@@ -59,11 +59,14 @@ async def get_json(
     timeout: float,
     client: httpx.AsyncClient,
     settings: Settings,
+    extra_headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     headers = {
         "User-Agent": "I2M-653/1.0 (library metadata)",
         "Accept": "application/json",
     }
+    if extra_headers:
+        headers.update(extra_headers)
     try:
         r = await client.get(url, params=params, timeout=timeout, headers=headers)
         r.raise_for_status()

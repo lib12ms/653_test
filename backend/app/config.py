@@ -55,6 +55,13 @@ class Settings(BaseSettings):
         default=False,
         description="KPIPA getBookDetail 호출 — ONIX 목차(TextType 04)만 알라딘 메타에 병합",
     )
+    naver_client_id: str = Field(default="", description="네이버 개발자센터 Client ID")
+    naver_client_secret: str = Field(default="", description="네이버 개발자센터 Client Secret")
+    naver_enable: bool = Field(default=False, description="네이버 책검색 API 활성화")
+    naver_description_min_chars: int = Field(
+        default=200,
+        description="알라딘 설명이 이 글자 수 미만이면 네이버 설명으로 보완",
+    )
     request_timeout_s: float = 30.0
     allow_insecure_ssl_fallback: bool = Field(
         default=False,
