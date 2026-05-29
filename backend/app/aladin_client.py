@@ -70,13 +70,20 @@ async def fetch_aladin_for_653(
         raw_desc = str((item.get("fulldescription") or item.get("description") or "") or "")
         raw_toc = str((item.get("toc") or sub.get("toc") or "") or "")
 
+        crawl_used = False
+        crawl_desc_filled = False
+        crawl_toc_filled = False
+
         need_crawl = not raw_desc.strip() or not raw_toc.strip()
         if need_crawl:
+            crawl_used = True
             crawled = await _crawl_aladin_detail(isbn13, req_client)
             if not raw_desc.strip() and crawled.get("detail_description"):
                 raw_desc = crawled["detail_description"]
+                crawl_desc_filled = True
             if not raw_toc.strip() and crawled.get("toc"):
                 raw_toc = crawled["toc"]
+                crawl_toc_filled = True
 
         cleaned_category = clean_category_for_ai(raw_category, s.category_remove_words)
         cleaned_desc = clean_description_for_ai(raw_desc)
@@ -97,6 +104,9 @@ async def fetch_aladin_for_653(
                 "description_clean": cleaned_desc[:1200],
                 "toc_raw": raw_toc[:1200],
                 "toc_clean": cleaned_toc[:1200],
+                "crawl_used": str(crawl_used),
+                "crawl_desc_filled": str(crawl_desc_filled),
+                "crawl_toc_filled": str(crawl_toc_filled),
             }
             return meta, dbg
         return meta
@@ -143,6 +153,6 @@ async def _crawl_aladin_detail(
         toc = toc_div.get_text(separator=" ", strip=True)
 
     return {
-        "detail_description": detail_desc[:800],
-        "toc": toc[:400],
+        "detail_description": detail_desc[:1500],
+        "toc": toc[:800],
     }

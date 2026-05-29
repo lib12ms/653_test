@@ -71,6 +71,16 @@ def _render_editable_653(data: dict[str, Any], key_prefix: str, isbn: str = "") 
     st.markdown("**653 (MRK)**")
     st.code(edited_tag, language="text")
 
+    token_usage = data.get("token_usage") or {}
+    if token_usage:
+        prompt_t = token_usage.get("prompt_tokens", 0)
+        completion_t = token_usage.get("completion_tokens", 0)
+        total_t = token_usage.get("total_tokens", 0)
+        col_p, col_c, col_t = st.columns(3)
+        col_p.metric("프롬프트 토큰", f"{prompt_t:,}")
+        col_c.metric("완성 토큰", f"{completion_t:,}")
+        col_t.metric("합계 토큰", f"{total_t:,}")
+
     with st.expander("원본 API 응답"):
         st.json(data)
 
@@ -96,7 +106,27 @@ def _render_editable_653(data: dict[str, Any], key_prefix: str, isbn: str = "") 
 
     dbg = data.get("preprocess_debug") or {}
     if dbg:
+        # 크롤링 보완 배지
+        if dbg.get("crawl_used") == "True":
+            crawled_fields = []
+            if dbg.get("crawl_desc_filled") == "True":
+                crawled_fields.append("설명")
+            if dbg.get("crawl_toc_filled") == "True":
+                crawled_fields.append("목차")
+            if crawled_fields:
+                st.info(f"알라딘 상세페이지 크롤링으로 **{', '.join(crawled_fields)}** 보완됨")
+            else:
+                st.warning("알라딘 상세페이지 크롤링 시도했으나 내용을 찾지 못했습니다.")
+
         with st.expander("전처리 전/후 비교"):
+            if dbg.get("crawl_used") == "True":
+                crawled_labels = []
+                if dbg.get("crawl_desc_filled") == "True":
+                    crawled_labels.append("설명(크롤링)")
+                if dbg.get("crawl_toc_filled") == "True":
+                    crawled_labels.append("목차(크롤링)")
+                if crawled_labels:
+                    st.caption(f"크롤링으로 채워진 필드: {', '.join(crawled_labels)}")
             st.markdown("**Category (raw → clean)**")
             st.code(f"{dbg.get('category_raw','')}\n→\n{dbg.get('category_clean','')}", language="text")
             st.markdown("**Description (raw → clean)**")
