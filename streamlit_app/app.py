@@ -58,9 +58,13 @@ def _render_editable_653(data: dict[str, Any], key_prefix: str, isbn: str = "") 
         if dbg.get("crawl_toc_filled") == "True":
             crawled_fields.append("목차")
         if crawled_fields:
-            st.info(f"알라딘 상세페이지 크롤링으로 **{', '.join(crawled_fields)}** 보완됨")
+            pw = " (Playwright)" if dbg.get("playwright_used") == "True" else ""
+            st.info(f"알라딘 상세페이지 크롤링{pw}으로 **{', '.join(crawled_fields)}** 보완됨")
         else:
-            st.warning("알라딘 상세페이지 크롤링 시도했으나 내용을 찾지 못했습니다.")
+            if dbg.get("playwright_used") != "True":
+                st.warning("알라딘 목차 크롤링: Playwright 미설치 — `pip install playwright && playwright install chromium`")
+            else:
+                st.warning("알라딘 상세페이지 크롤링 시도했으나 목차를 찾지 못했습니다.")
 
     if data.get("hint_source") == "kpipa":
         st.info("KPIPA 목차가 병합되었습니다.")

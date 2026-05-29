@@ -9,6 +9,8 @@ openai>=2.0,<3
 tenacity>=8.2,<9
 gspread>=6,<7
 google-auth>=2,<3
+# 목차 JS 렌더링 크롤링 (선택) — 설치 후 `playwright install chromium` 필요
+playwright>=1.40,<2
 
 # Frontend
 streamlit>=1.32,<2
