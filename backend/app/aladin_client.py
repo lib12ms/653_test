@@ -50,48 +50,99 @@ async def fetch_aladin_for_653(
             client=req_client,
             settings=s,
         )
+
+        item_list = data.get("item")
+        if not item_list or not isinstance(item_list, list):
+            raise ValueError("알라딘 API에서 도서를 찾지 못했습니다.")
+        item: dict[str, Any] = item_list[0]
+
+        raw_author = (
+            item.get("author")
+            or item.get("authors")
+            or item.get("author_t")
+            or ""
+        )
+        if isinstance(raw_author, list):
+            raw_author = " ".join(str(x) for x in raw_author)
+
+        sub: dict[str, Any] = (item.get("subInfo") or {}) or {}
+        raw_category = str(item.get("categoryName", "") or "")
+        raw_desc = str((item.get("fulldescription") or item.get("description") or "") or "")
+        raw_toc = str((item.get("toc") or sub.get("toc") or "") or "")
+
+        need_crawl = not raw_desc.strip() or not raw_toc.strip()
+        if need_crawl:
+            crawled = await _crawl_aladin_detail(isbn13, req_client)
+            if not raw_desc.strip() and crawled.get("detail_description"):
+                raw_desc = crawled["detail_description"]
+            if not raw_toc.strip() and crawled.get("toc"):
+                raw_toc = crawled["toc"]
+
+        cleaned_category = clean_category_for_ai(raw_category, s.category_remove_words)
+        cleaned_desc = clean_description_for_ai(raw_desc)
+        cleaned_toc = clean_toc_for_ai(raw_toc)
+
+        meta = AladinMetadata653(
+            category=cleaned_category,
+            title=str(item.get("title", "") or ""),
+            authors=clean_author_str(str(raw_author or "")),
+            description=cleaned_desc.strip(),
+            toc=cleaned_toc.strip(),
+        )
+        if include_debug:
+            dbg = {
+                "category_raw": raw_category,
+                "category_clean": cleaned_category,
+                "description_raw": raw_desc[:1200],
+                "description_clean": cleaned_desc[:1200],
+                "toc_raw": raw_toc[:1200],
+                "toc_clean": cleaned_toc[:1200],
+            }
+            return meta, dbg
+        return meta
     finally:
         if owns_client:
             await req_client.aclose()
 
-    item_list = data.get("item")
-    if not item_list or not isinstance(item_list, list):
-        raise ValueError("알라딘 API에서 도서를 찾지 못했습니다.")
-    item: dict[str, Any] = item_list[0]
 
-    raw_author = (
-        item.get("author")
-        or item.get("authors")
-        or item.get("author_t")
-        or ""
-    )
-    if isinstance(raw_author, list):
-        raw_author = " ".join(str(x) for x in raw_author)
+async def _crawl_aladin_detail(
+    isbn: str,
+    client: httpx.AsyncClient,
+) -> dict[str, str]:
+    """
+    알라딘 상세페이지 크롤링.
+    fulldescription/toc가 API에서 비어있을 때 보완용.
+    """
+    try:
+        from bs4 import BeautifulSoup
+    except ImportError:
+        return {}
 
-    sub: dict[str, Any] = (item.get("subInfo") or {}) or {}
-    raw_category = str(item.get("categoryName", "") or "")
-    raw_desc = str((item.get("fulldescription") or item.get("description") or "") or "")
-    raw_toc = str((item.get("toc") or sub.get("toc") or "") or "")
+    url = f"https://www.aladin.co.kr/shop/wproduct.aspx?ISBN={isbn}"
+    try:
+        resp = await client.get(
+            url,
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=10.0,
+            follow_redirects=True,
+        )
+        resp.raise_for_status()
+    except Exception:
+        return {}
 
-    cleaned_category = clean_category_for_ai(raw_category, s.category_remove_words)
-    cleaned_desc = clean_description_for_ai(raw_desc)
-    cleaned_toc = clean_toc_for_ai(raw_toc)
+    soup = BeautifulSoup(resp.text, "html.parser")
 
-    meta = AladinMetadata653(
-        category=cleaned_category,
-        title=str(item.get("title", "") or ""),
-        authors=clean_author_str(str(raw_author or "")),
-        description=cleaned_desc.strip(),
-        toc=cleaned_toc.strip(),
-    )
-    if include_debug:
-        dbg = {
-            "category_raw": raw_category,
-            "category_clean": cleaned_category,
-            "description_raw": raw_desc[:1200],
-            "description_clean": cleaned_desc[:1200],
-            "toc_raw": raw_toc[:1200],
-            "toc_clean": cleaned_toc[:1200],
-        }
-        return meta, dbg
-    return meta
+    detail_desc = ""
+    desc_div = soup.select_one("div.Ere_prod_mconts_R")
+    if desc_div:
+        detail_desc = desc_div.get_text(separator=" ", strip=True)
+
+    toc = ""
+    toc_div = soup.select_one("div#div_TOC_All")
+    if toc_div:
+        toc = toc_div.get_text(separator=" ", strip=True)
+
+    return {
+        "detail_description": detail_desc[:800],
+        "toc": toc[:400],
+    }

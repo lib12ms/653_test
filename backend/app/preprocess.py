@@ -34,23 +34,58 @@ def clean_author_str(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+def extract_toc_major(toc: str, max_chars: int = 300) -> str:
+    """
+    목차에서 장(章) 단위 제목만 추출.
+    N장·N부·N편·Part N·Chapter N 패턴 매칭.
+    에필로그·참고문헌·부록 등 후미 항목 제거.
+    """
+    DENY_KEYWORDS = {
+        "에필로그", "참고문헌", "부록", "찾아보기",
+        "색인", "저자소개", "감사의글", "옮긴이",
+        "프롤로그", "머리말", "들어가며",
+    }
+
+    lines = toc.replace("·", "\n").splitlines()
+    major = []
+
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        if any(d in line for d in DENY_KEYWORDS):
+            continue
+        if re.match(
+            r"^(제?\s*\d+\s*[장부편권화]\s|"
+            r"part\s*\d+|chapter\s*\d+)",
+            line, re.IGNORECASE,
+        ):
+            major.append(line)
+
+    result = " / ".join(major)
+
+    # 장 단위 추출 결과 없으면 원본 앞부분 사용
+    if not result:
+        result = toc
+
+    return result[:max_chars]
+
+
 def clean_toc_for_ai(toc_text: str) -> str:
-    """목차 문자열에서 페이지/장표기/불용어를 제거해 LLM 입력 품질을 높인다."""
+    """목차 문자열에서 페이지 번호·불용어를 제거하고 장 단위로 압축해 LLM 입력 품질을 높인다."""
     if not toc_text:
         return ""
 
     # 1) 페이지 번호 연결부 제거 (예: "서론 ...... 15")
     text = re.sub(r"(\.{2,}|…|[-_]{2,})\s*\d+", " ", toc_text)
 
-    # 2) 장/부 표기 제거 (예: "제 1장", "PART 2")
-    text = re.sub(r"(제\s?\d+\s?[장부절]|PART\s?\d+|CHAPTER\s?\d+)", " ", text, flags=re.I)
-
-    # 3) 불용어 제거
-    stop_words = ["목차", "차례", "CONTENTS", "머리말", "프롤로그", "에필로그", "찾아보기", "색인"]
+    # 2) 불용어 제거 (장/부 표기는 extract_toc_major 감지에 사용하므로 유지)
+    stop_words = ["목차", "차례", "CONTENTS"]
     for word in stop_words:
         text = text.replace(word, " ")
 
-    return re.sub(r"\s+", " ", text).strip()
+    cleaned = re.sub(r"\s+", " ", text).strip()
+    return extract_toc_major(cleaned, max_chars=300)
 
 
 def clean_description_for_ai(description_text: str) -> str:
