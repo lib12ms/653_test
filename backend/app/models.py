@@ -20,6 +20,7 @@ class AladinMetadata653(BaseModel):
     authors: str = ""
     description: str = ""
     toc: str = ""
+    publisher_desc: str = ""  # 출판사 제공 책소개 (getContents.aspx 크롤링)
 
 
 class NlkMetadataHint(BaseModel):

@@ -179,18 +179,31 @@ def build_forbidden_set(title: str, authors: str) -> set[str]:
     return {f for f in forb if f and len(f) >= 2}
 
 
+_SENTENCE_ENDING_RE = re.compile(
+    r"(합니다|습니다|겠습니다|없습니다|됩니다|입니다|않습니다|드립니다)$"
+)
+
+
 def should_keep_keyword(kw: str, forbidden: set[str]) -> bool:
     n = norm_text(kw)
     compact = n.replace(" ", "")
     if not n or len(compact) < 2:
         return False
+    # 문장형 GPT 거절 메시지 차단: 길이 초과 또는 한국어 경어체 어미
+    if len(compact) > 15:
+        return False
+    if _SENTENCE_ENDING_RE.search(compact):
+        return False
     if compact in TITLE_DERIVED_ALLOWED_KEYWORDS:
         return True
     for tok in forbidden:
         tok_compact = tok.replace(" ", "")
+        # 키워드가 금지어와 같거나, 금지어의 부분문자열인 경우 차단
         if compact == tok_compact or compact in tok_compact:
             return False
-        if len(tok_compact) >= 3 and tok_compact in compact:
+        # 키워드가 금지어로 시작하는 경우 차단 (셰익스피어분석, 심리학적접근 등)
+        # startswith 사용: 교양심리학·사회철학처럼 금지어가 뒤에 붙은 복합어는 허용
+        if len(tok_compact) >= 3 and compact.startswith(tok_compact):
             return False
     return True
 

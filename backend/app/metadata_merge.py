@@ -37,4 +37,5 @@ def merge_aladin_with_nlk(
         authors=base.authors,
         description=merged_desc,
         toc=clean_toc_for_ai(merged_toc),
+        publisher_desc=base.publisher_desc,
     )

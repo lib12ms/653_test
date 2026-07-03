@@ -1,8 +1,10 @@
 """알라딘 TTB ItemLookUp + 상세페이지 크롤링."""
 from __future__ import annotations
 
+import asyncio
 import json as _json
 import logging
+import re
 from typing import Any
 
 import httpx
@@ -77,20 +79,18 @@ async def fetch_aladin_for_653(
         crawl_used = False
         crawl_desc_filled = False
         crawl_toc_filled = False
-        playwright_used = False
+        raw_publisher_desc = ""
 
-        need_crawl = not raw_desc.strip() or not raw_toc.strip()
-        if need_crawl:
-            crawl_used = True
-            crawled = await _crawl_aladin_detail(isbn13, req_client)
-            if not raw_desc.strip() and crawled.get("detail_description"):
-                raw_desc = crawled["detail_description"]
-                crawl_desc_filled = True
-            if not raw_toc.strip() and crawled.get("toc"):
-                raw_toc = crawled["toc"]
-                crawl_toc_filled = True
-            if crawled.get("playwright_used") == "true":
-                playwright_used = True
+        # 항상 크롤링 — 출판사 제공 책소개는 API에 없음
+        crawl_used = True
+        crawled = await _crawl_aladin_detail(isbn13, req_client)
+        if not raw_desc.strip() and crawled.get("detail_description"):
+            raw_desc = crawled["detail_description"]
+            crawl_desc_filled = True
+        if not raw_toc.strip() and crawled.get("toc"):
+            raw_toc = crawled["toc"]
+            crawl_toc_filled = True
+        raw_publisher_desc = crawled.get("publisher_desc", "")
 
         cleaned_category = clean_category_for_ai(raw_category, s.category_remove_words)
         cleaned_desc = clean_description_for_ai(raw_desc)
@@ -102,6 +102,7 @@ async def fetch_aladin_for_653(
             authors=clean_author_str(str(raw_author or "")),
             description=cleaned_desc.strip(),
             toc=cleaned_toc.strip(),
+            publisher_desc=raw_publisher_desc.strip(),
         )
         if include_debug:
             dbg = {
@@ -111,10 +112,10 @@ async def fetch_aladin_for_653(
                 "description_clean": cleaned_desc[:1200],
                 "toc_raw": raw_toc[:1200],
                 "toc_clean": cleaned_toc[:1200],
+                "publisher_desc": raw_publisher_desc[:1200],
                 "crawl_used": str(crawl_used),
                 "crawl_desc_filled": str(crawl_desc_filled),
                 "crawl_toc_filled": str(crawl_toc_filled),
-                "playwright_used": str(playwright_used),
             }
             return meta, dbg
         return meta
@@ -124,71 +125,102 @@ async def fetch_aladin_for_653(
 
 
 def _isbn13_to_isbn10(isbn13: str) -> str:
-    """ISBN13(978 접두) → ISBN10 변환. 알라딘 페이지 요소 ID에 사용."""
+    """ISBN13 → 알라딘 URL용 ID 변환.
+    978 접두어: ISBN-10으로 변환.
+    979 접두어: ISBN-13 그대로 반환 (ISBN-10 변환 불가).
+    """
     s = isbn13.strip().replace("-", "")
-    if len(s) != 13 or not s.startswith("978"):
+    if len(s) != 13:
+        return s[:10] if len(s) >= 10 else s
+    if s.startswith("979"):
+        return s
+    if not s.startswith("978"):
         return s[:10] if len(s) >= 10 else s
     core = s[3:12]
     check_val = (11 - (sum((10 - i) * int(d) for i, d in enumerate(core)) % 11)) % 11
     return core + ("X" if check_val == 10 else str(check_val))
 
 
-async def _playwright_fetch_toc(isbn10: str) -> str:
-    """
-    Playwright로 알라딘 상세페이지를 JS 렌더링 후 목차 텍스트 추출.
-    playwright 패키지가 설치되어 있지 않으면 즉시 빈 문자열 반환.
-
-    설치 방법:
-        pip install playwright
-        playwright install chromium
-    """
+def _parse_section_html(html: str) -> str:
+    """알라딘 getContents.aspx HTML 응답 → 정제된 텍스트."""
+    if not html or len(html) < 10:
+        return ""
     try:
-        from playwright.async_api import async_playwright
-    except ImportError:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+        for tag in soup(["script", "style", "link"]):
+            tag.decompose()
+        text = soup.get_text(separator="\n", strip=True)
+        return re.sub(r"\n{3,}", "\n\n", text)
+    except Exception:
         return ""
 
-    # ID가 숫자로 시작하므로 CSS attribute selector 사용
-    intro_attr = f'[id="{isbn10}_Introduce"]'
-    url = f"https://www.aladin.co.kr/shop/wproduct.aspx?ISBN={isbn10}"
-    toc = ""
-    try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
-            )
-            try:
-                ctx = await browser.new_context(
-                    user_agent=(
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/124.0.0.0 Safari/537.36"
-                    ),
-                    locale="ko-KR",
-                    viewport={"width": 1280, "height": 800},
-                )
-                page = await ctx.new_page()
-                await page.add_init_script(
-                    "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-                )
-                await page.goto(url, wait_until="domcontentloaded", timeout=20_000)
-                # loadContent() AJAX 완료 대기 (최대 8초)
-                try:
-                    await page.wait_for_function(
-                        f"(function(){{ var el = document.querySelector('{intro_attr}');"
-                        f" return el && el.innerText.trim().length > 20; }})()",
-                        timeout=8_000,
-                    )
-                except Exception:
-                    pass
-                el = await page.query_selector(intro_attr)
-                if el:
-                    toc = (await el.inner_text() or "").strip()
-            finally:
-                await browser.close()
-    except Exception as e:
-        logger.debug("Playwright 목차 추출 실패: %s", e)
-    return toc
+
+def _extract_introduce_body(text: str) -> tuple[str, str]:
+    """
+    Introduce 섹션 텍스트에서 (책소개 본문, 목차 텍스트) 분리.
+    알라딘 Introduce 섹션은 책소개 + 목차가 함께 포함됨.
+    """
+    if not text:
+        return "", ""
+
+    lines = text.splitlines()
+    HEADER_SKIP = {"책소개", "목차"}
+    desc_lines: list[str] = []
+    toc_lines: list[str] = []
+    in_toc = False
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped in HEADER_SKIP:
+            if stripped == "목차":
+                in_toc = True
+            continue
+        if in_toc:
+            toc_lines.append(stripped)
+        else:
+            desc_lines.append(stripped)
+
+    return "\n".join(desc_lines), "\n".join(toc_lines)
+
+
+def _extract_publisher_book_intro(text: str) -> str:
+    """
+    PublisherDesc 섹션에서 출판사 메타(이름·최근작·분야 순위) 제거 후
+    '출판사 제공 책소개' 본문만 추출.
+    """
+    if not text:
+        return ""
+
+    lines = text.splitlines()
+    MARKER = "출판사 제공 책소개"
+    SKIP_AFTER = {"출판사 제공", "책소개", "더보기", MARKER}
+
+    start_idx = None
+    for i, line in enumerate(lines):
+        if line.strip() == MARKER:
+            start_idx = i + 1
+            break
+
+    if start_idx is None:
+        return ""
+
+    content_lines: list[str] = []
+    seen: set[str] = set()
+    for line in lines[start_idx:]:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped in SKIP_AFTER:
+            continue
+        if stripped in seen:      # 더보기 앞뒤로 같은 내용이 반복되므로 중복 제거
+            continue
+        seen.add(stripped)
+        content_lines.append(stripped)
+
+    return "\n".join(content_lines)
 
 
 async def _crawl_aladin_detail(
@@ -196,53 +228,54 @@ async def _crawl_aladin_detail(
     client: httpx.AsyncClient,
 ) -> dict[str, str]:
     """
-    알라딘 상세페이지 크롤링.
-    - 설명: 정적 HTML의 JSON-LD / og:description 에서 추출 (안정적)
-    - 목차: Playwright로 JS 렌더링 후 추출 (playwright 패키지 필요)
+    알라딘 상세페이지 3개 섹션을 getContents.aspx 직접 호출로 수집.
+    - Introduce   : 책소개 + 내장 목차
+    - Toc         : 목차 전문 (없으면 Introduce 내장 목차 활용)
+    - PublisherDesc: 출판사 제공 책소개
+    Playwright 불필요, 쿠키·세션 불필요.
     """
     result: dict[str, str] = {}
-
-    # ── 설명: 정적 HTML ────────────────────────────────────────────────────────
-    url = f"https://www.aladin.co.kr/shop/wproduct.aspx?ISBN={isbn}"
-    try:
-        from bs4 import BeautifulSoup
-
-        resp = await client.get(
-            url,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
-            timeout=10.0,
-            follow_redirects=True,
-        )
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        # JSON-LD description (가장 신뢰)
-        for script in soup.find_all("script", type="application/ld+json"):
-            try:
-                ld = _json.loads(script.string or "")
-                desc = str(ld.get("description") or "").strip()
-                if desc:
-                    result["detail_description"] = desc[:1500]
-                    break
-            except Exception:
-                continue
-
-        # fallback: og:description
-        if not result.get("detail_description"):
-            og = soup.find("meta", property="og:description")
-            if og:
-                desc = str(og.get("content") or "").strip()
-                if desc:
-                    result["detail_description"] = desc[:1500]
-
-    except Exception as e:
-        logger.debug("알라딘 정적 페이지 설명 추출 실패: %s", e)
-
-    # ── 목차: Playwright (JS 렌더링 필요) ──────────────────────────────────────
     isbn10 = _isbn13_to_isbn10(isbn)
-    toc = await _playwright_fetch_toc(isbn10)
-    if toc:
-        result["toc"] = toc[:800]
-        result["playwright_used"] = "true"
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Referer": f"https://www.aladin.co.kr/shop/wproduct.aspx?ISBN={isbn10}",
+        "X-Requested-With": "XMLHttpRequest",
+    }
+
+    async def _get(name: str) -> str:
+        url = (
+            f"https://www.aladin.co.kr/shop/product/getContents.aspx"
+            f"?ISBN={isbn10}&name={name}&type=0"
+        )
+        try:
+            resp = await client.get(url, headers=headers, timeout=10.0, follow_redirects=True)
+            resp.raise_for_status()
+            return _parse_section_html(resp.text)
+        except Exception as e:
+            logger.debug("알라딘 섹션 %s 추출 실패: %s", name, e)
+            return ""
+
+    introduce_text, toc_text, publisher_text = await asyncio.gather(
+        _get("Introduce"), _get("Toc"), _get("PublisherDesc")
+    )
+
+    # ── 책소개 + 내장목차 분리 ─────────────────────────────────────────────────
+    intro_desc, intro_toc = _extract_introduce_body(introduce_text)
+    if intro_desc:
+        result["detail_description"] = intro_desc[:1500]
+
+    # ── 목차: 전용 섹션 우선, 없으면 Introduce 내장 목차 ──────────────────────
+    if toc_text.strip():
+        result["toc"] = toc_text[:800]
+    elif intro_toc:
+        result["toc"] = intro_toc[:400]
+
+    # ── 출판사 제공 책소개 ─────────────────────────────────────────────────────
+    pub_desc = _extract_publisher_book_intro(publisher_text)
+    if pub_desc:
+        result["publisher_desc"] = pub_desc[:1500]
 
     return result
