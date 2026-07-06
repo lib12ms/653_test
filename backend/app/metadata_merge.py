@@ -15,11 +15,13 @@ def merge_aladin_with_nlk(
     nlk: NlkMetadataHint,
     settings: Settings | None = None,
     secondary_source: str = "none",
+    content_code: str = "",
 ) -> AladinMetadata653:
     """
     알라딘을 주 정보원으로 두고 보강한다.
     - secondary_source == 'kpipa': KPIPA에서 가져온 목차(nlk.toc)만 알라딘 목차에 덧붙임.
     - 'none': 알라딘만(전처리만).
+    - content_code: ISBN 부가기호 기반 3자리 내용분류코드(있으면 분야 라우팅 보조 신호로 함께 보관).
     """
     s = get_settings() if settings is None else settings
     merged_category = clean_category_for_ai((base.category or "").strip(), s.category_remove_words)
@@ -38,4 +40,5 @@ def merge_aladin_with_nlk(
         description=merged_desc,
         toc=clean_toc_for_ai(merged_toc),
         publisher_desc=base.publisher_desc,
+        content_code=content_code,
     )

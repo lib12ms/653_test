@@ -172,10 +172,10 @@ def build_forbidden_set(title: str, authors: str) -> set[str]:
     forb: set[str] = set()
     if t_norm:
         forb.update(t_norm.split())
-        forb.add(t_norm.replace(" ", ""))
+        # 전체 이어붙임은 추가하지 않음 — "파고다토익스피킹..."처럼 긴 문자열이
+        # "토익스피킹" 등 유효한 복합어를 substring 매칭으로 차단하는 부작용 발생
     if a_norm:
         forb.update(a_norm.split())
-        forb.add(a_norm.replace(" ", ""))
     return {f for f in forb if f and len(f) >= 2}
 
 
@@ -198,11 +198,11 @@ def should_keep_keyword(kw: str, forbidden: set[str]) -> bool:
         return True
     for tok in forbidden:
         tok_compact = tok.replace(" ", "")
-        # 키워드가 금지어와 같거나, 금지어의 부분문자열인 경우 차단
-        if compact == tok_compact or compact in tok_compact:
+        # 키워드가 금지어와 정확히 일치하는 경우 차단
+        if compact == tok_compact:
             return False
-        # 키워드가 금지어로 시작하는 경우 차단 (셰익스피어분석, 심리학적접근 등)
-        # startswith 사용: 교양심리학·사회철학처럼 금지어가 뒤에 붙은 복합어는 허용
+        # 키워드가 금지어로 시작하는 경우 차단 (데미안분석·셰익스피어론 등)
+        # len>=3 기준: 2자 금지어(영어·토익 등)는 startswith 허용(영어회화·토익스피킹 등 복합어 통과)
         if len(tok_compact) >= 3 and compact.startswith(tok_compact):
             return False
     return True

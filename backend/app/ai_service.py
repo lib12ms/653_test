@@ -44,16 +44,20 @@ CATEGORY_PROMPTS = {
         "아래 5가지 유형 안에서만 키워드를 선택. 총합 최대 5개.\n"
         "근거 없는 슬롯은 비울 것. 억지로 채우지 말 것.\n\n"
         "유형A 장르명 [분류에서 반드시 1개]\n"
-        "  분류 꼬리 하위 장르명. 단순 소설·에세이 금지, 수식어 필수.\n"
-        "  예) 성장소설·심리소설·역사소설·페미니즘소설·추리소설\n\n"
+        "  분류 꼬리 하위 장르명. 단순 소설·시 금지, 수식어 필수.\n"
+        "  소설이면) 성장소설·심리소설·역사소설·페미니즘소설·추리소설·단편소설\n"
+        "  시집이면) 현대시·서정시·자연시·도시시·애도시·언어시 (단독 '시' 금지)\n"
+        "  희곡이면) 현대희곡·단막극·뮤지컬대본\n\n"
         "유형B 테마·갈등 [0-1개. 조건 엄수]\n"
         "  ① 문학 비평·도서 분류 시스템에서 이미 통용되는 단어만\n"
         "  ② 독자가 이 테마를 검색할 때 실제로 검색창에 입력하는 단어여야 함\n"
-        "  ③ 줄거리 요약에서 파생한 신조 복합어 금지 (자아희생·생존본능·지구생존 등)\n"
+        "  ③ 줄거리 요약에서 파생한 신조 복합어 금지 (자아희생·생존본능 등)\n"
         "  ④ 단독 추상명사 금지 (허영·위선·희생·욕망·운명)\n"
-        "  예) 계급갈등·세대갈등·정체성혼란·트라우마·애도\n\n"
+        "  소설이면) 계급갈등·세대갈등·정체성혼란·트라우마·애도\n"
+        "  시집이면) 애도·상실·고독·죽음·자연·그리움 (시 안에서 반복되는 핵심 모티프만)\n\n"
         "유형C 시대·배경 [0-1개. 설명·목차 명시된 경우만. 추정 금지]\n"
-        "  예) 일제강점기·5·18·조선시대·냉전시대·메이지시대\n\n"
+        "  소설이면) 일제강점기·5·18·조선시대·냉전시대·메이지시대\n"
+        "  시집이면) 일제강점기·산업화시대 등 시집 전체를 관통하는 시대만\n\n"
         "유형D 독자군·사회상황 [0-1개. 설명 명시된 경우만. 추정 금지]\n"
         "  예) 중년여성·이민자가족·비혼여성·탈북자\n\n"
         "유형E 트렌드어 [0-1개. 설명 명시된 경우만. 추정 금지]\n"
@@ -78,7 +82,7 @@ CATEGORY_PROMPTS = {
         "  예) 워킹맘·간호사·제주살이·노년일상·싱글라이프·이민생활·투병기\n\n"
         "유형D 시대·사회적 맥락 [0-1개. 설명 명시 시만]\n"
         "  설명·목차에 명시된 사회적 상황이나 시대 배경.\n"
-        "  예) 코로나시대·갱년기·이별·육아·이민·귀농\n\n"
+        "  예) 코로나시대·갱년기·중년위기·육아일기·이민생활·귀농생활\n\n"
         "금지: 감상어(따뜻한·힐링·위로·여운·공감·소소한·잔잔한)\n"
         "금지: 단독 추상명사(삶·사랑·희망·행복·성장·치유·위로)\n"
     ),
@@ -144,9 +148,26 @@ CATEGORY_PROMPTS = {
     ),
     "인문학": (
         "이 책은 인문학 도서입니다.\n"
-        "- 사상적 개념·인문학적 주제어 위주. 예) 문명비판·동물권·생태윤리·글쓰는법·창작\n"
-        "- 상위분류명 단독 금지. 구체 하위개념으로 치환.\n"
-        "- 글쓰기·출판 관련이면: 생성형AI·AI글쓰기·저작권·창작윤리\n"
+        "아래 5개 슬롯 안에서만 키워드 선택. 총합 최대 5개.\n"
+        "근거 없는 슬롯은 비울 것. 억지로 채우지 말 것.\n\n"
+        "유형A 분야명 [1개, 필수]\n"
+        "  단독 '인문학' 금지. 카테고리 기반 구체 분야명.\n"
+        "  글쓰기이면) 글쓰기·창작법·스토리텔링·학술글쓰기·독서법·문장론\n"
+        "  언어이면) 언어학·의미론·커뮤니케이션학·언어문화론\n"
+        "  교양/문명이면) 교양인문학·문명론·문화인류학·신화학·기호학·미학\n\n"
+        "유형B 핵심 이론·개념 [0-1개]\n"
+        "  학술 DB에 이미 등재된 개념·사조만. 저자·도서 고유 조어 금지.\n"
+        "  예) 구조주의·포스트모더니즘·문화상대주의·내러티브이론·언어상대성\n\n"
+        "유형C 인명·사상가 [0-1개. 제목·설명 명시 시만]\n"
+        "  설명·목차에 등장하는 핵심 사상가 이름 또는 저자명.\n"
+        "  예) 촘스키·유발하라리·움베르토에코·수전손택·롤랑바르트\n\n"
+        "유형D 현대 이슈·적용 주제 [0-1개. 설명 명시 시만]\n"
+        "  글쓰기이면) 생성형AI·AI글쓰기·저작권·창작윤리\n"
+        "  사회/문화이면) 동물권·생태윤리·탈식민주의·디지털문화·문화다양성\n\n"
+        "유형E 독자층·활용맥락 [0-1개. 설명·제목 명시 시만]\n"
+        "  예) 인문학입문·글쓰기교육·인문융합·교양강의\n\n"
+        "금지: 단독 '인문학'·'문화'·'사상'·'교양' 등 상위분류어\n"
+        "금지: 저자·도서 고유 조어\n"
     ),
     "종교/역학": (
         "이 책은 종교 또는 역학 도서입니다.\n"
@@ -280,7 +301,7 @@ CATEGORY_PROMPTS = {
         "  건강/운동이면) 근력운동·요가·필라테스·암벽등반·수영·골프·테니스·영양관리·한방건강\n"
         "  취미이면) 뜨개질·실내원예·수채화·우쿨렐레·도예·사진촬영·독서법\n"
         "  살림이면) 인테리어·수납정리·홈케어·청소법·제로웨이스트\n"
-        "  건축이면) 주거건축·종교건축·인테리어설계·건축역사·도시계획\n\n"
+        "  건축이면) 주거건축·공공건축·박물관건축·종교건축·도시공원·조경설계·인테리어설계·건축역사·도시계획\n\n"
         "유형B 핵심 기법·재료·도구 [0-1개]\n"
         "  실습에서 다루는 구체 기술명·재료명·운동기법.\n"
         "  요리이면) 수비드·발효·저온조리·글루텐프리·콜드브루\n"
@@ -299,11 +320,6 @@ CATEGORY_PROMPTS = {
         "  예) 채식주의·비건트렌드·제로웨이스트·홈리빙·미니멀라이프·플랜테리어\n\n"
         "금지: 단독 '음식'·'건강'·'운동'·'취미'·'살림' 등 상위분류어\n"
         "금지: 감상어·메타표현 (맛있는·건강한삶·행복한식탁·루틴관리 등)\n"
-    ),
-    "기술과학": (
-        "이 책은 기술과학·실용 도서입니다.\n"
-        "- 기법·도구명·실천항목 위주. 예) 머신러닝·코바늘뜨기·비건요리·근력운동\n"
-        "- 인접기술어 추정 금지. 목차 내용 최대 반영.\n"
     ),
     "예술": (
         "이 책은 예술 도서입니다. 카테고리를 확인해 해당 분야 예시를 우선 참고할 것.\n"
@@ -335,28 +351,80 @@ CATEGORY_PROMPTS = {
         "금지: 설명·목차에 없는 사조명·인물명 추정 생성\n"
     ),
     "교육": (
-        "이 책은 교육·외국어 도서입니다.\n"
+        "이 책은 교육 도서입니다.\n"
         "아래 5개 슬롯 안에서만 키워드 선택. 총합 최대 5개.\n"
         "근거 없는 슬롯은 비울 것. 억지로 채우지 말 것.\n\n"
-        "유형A 분야명/언어명 [1개, 필수]\n"
-        "  외국어이면) 영어회화·일본어·중국어·스페인어·프랑스어·한국어교육\n"
+        "유형A 분야명 [1개, 필수]\n"
         "  교육학이면) 개혁교육학·대안교육·특수교육·유아교육·평생교육\n"
-        "  대학교재이면) 해당 학문 분야명. 예) 경영학원론·법학개론·심리학개론·공업수학·선형대수학·유기화학·열역학\n\n"
+        "  대학교재이면) 해당 학문 분야명. 예) 경영학원론·법학개론·심리학개론·공업수학·선형대수학·유기화학·열역학\n"
+        "  수험서이면) 공무원시험·편입시험·자격증시험\n"
+        "  학부모/육아이면) 육아법·자녀교육·학습코칭·자녀소통·부모교육\n\n"
         "유형B 시험명·자격증명 [0-1개. 제목·설명 명시 시만]\n"
-        "  예) TOPIK·JLPT·HSK·수능·토익·토플·IELTS·공무원시험·편입\n"
-        "  시험명은 이용자가 실제로 검색하는 형태로. 약어·정식명 중 검색 효용 높은 것 선택.\n\n"
-        "유형C 학습 방법론 [0-1개. 설명·목차 명시 시만]\n"
-        "  예) 자기주도학습·플립러닝·문법중심·독학·쉐도잉·회화중심·읽기쓰기\n\n"
-        "유형D 핵심 이론·개념 [0-1개. 교육학·대학교재 한정]\n"
-        "  예) 구성주의·교육과정·발달심리학·학습이론·비판교육학·행동주의\n\n"
+        "  예) 수능·공무원시험·편입·TOPIK\n"
+        "  시험명은 이용자가 실제로 검색하는 형태로.\n\n"
+        "유형C 핵심 이론·개념 [0-1개. 교육학·대학교재·학부모 한정]\n"
+        "  예) 구성주의·교육과정·발달심리학·학습이론·비판교육학·행동주의·애착육아\n\n"
+        "유형D 학습 방법론·특성 [0-1개. 설명·목차 명시 시만]\n"
+        "  예) 플립러닝·문제중심학습·프로젝트학습·협동학습·개별화학습\n\n"
         "유형E 대상·현대맥락 [0-1개. 설명 명시 시만]\n"
-        "  예) 성인학습·다문화교육·영재교육·홈스쿨링·직장인영어·원격교육\n\n"
-        "금지: 단독 '교육'·'학습'·'외국어' 등 상위분류어\n"
-        "금지: 단독 '기초'·'입문'·'고급' (언어명·과목명 없이 단독 사용)\n"
+        "  예) 성인학습·다문화교육·영재교육·홈스쿨링·원격교육·초등입학·사춘기자녀\n\n"
+        "금지: 단독 '교육'·'학습' 등 상위분류어\n"
+        "금지: 단독 '기초'·'입문'·'고급' (과목명 없이 단독 사용)\n"
+        "금지: 계열명 단독 사용 ('경상계열'·'이공계열'·'사범계열' 등)\n"
+        "금지: 단독 '육아'·'좋은부모' (구체 영역과 결합 필수)\n"
+    ),
+    "외국어": (
+        "이 책은 외국어 학습 도서입니다.\n"
+        "아래 5개 슬롯 안에서만 키워드 선택. 총합 최대 5개.\n"
+        "근거 없는 슬롯은 비울 것. 억지로 채우지 말 것.\n\n"
+        "유형A 언어명+학습유형 [1개, 필수]\n"
+        "  언어+기능: 영어회화·영어독해·영어듣기·영어쓰기·일본어회화·중국어회화·스페인어입문·프랑스어독해\n"
+        "  언어+시험: 토익·토플·IELTS·JLPT·HSK·TOEIC스피킹·한국어교육(TOPIK)\n\n"
+        "유형B 학습 기능·스킬 [0-1개. 설명 명시 시만]\n"
+        "  예) 쉐도잉·문법·어휘확장·영어발음·듣기훈련·속독·고득점전략\n\n"
+        "유형C 수준·대상 [0-1개. 제목·설명 명시 시만]\n"
+        "  예) 초급자·중급자·고급자·직장인영어·여행영어·비즈니스영어·TOEIC수험생\n\n"
+        "유형D 교재 형식 [0-1개. 설명 명시 시만]\n"
+        "  예) 실전모의고사·기출문제·단어장·문법교본\n\n"
+        "유형E 응용맥락 [0-1개. 명시 시만]\n"
+        "  예) 미국문화·뉴스영어·팝송영어·드라마영어\n\n"
+        "금지: 단독 '외국어'·'영어'·'언어' (구체적 언어명+기능/시험 형태 사용)\n"
+        "금지: '자기주도학습'·'종합' 등 학습 일반어\n"
+    ),
+    "여행": (
+        "이 책은 여행 도서입니다.\n"
+        "아래 5개 슬롯 안에서만 키워드 선택. 총합 최대 5개.\n"
+        "근거 없는 슬롯은 비울 것. 억지로 채우지 말 것.\n\n"
+        "유형A 지역+여행형태 [1개, 필수]\n"
+        "  국가/지역명 + 가이드북·에세이·기행 등 결합. 단독 '여행' 금지.\n"
+        "  예) 일본여행가이드북·유럽도시기행·국내여행에세이·동남아한달살기\n\n"
+        "유형B 여행스타일 [0-1개]\n"
+        "  예) 한달살기·배낭여행·가족여행·나홀로여행·미식여행·자유여행·성지순례\n\n"
+        "유형C 명소·구체장소 [0-1개. 설명·목차 명시 시만. 추정 금지]\n"
+        "  예) 도쿄타워·마추픽추·산티아고순례길·제주올레길\n\n"
+        "유형D 대상·목적 [0-1개. 설명 명시 시만]\n"
+        "  예) 아이동반여행·신혼여행·은퇴여행·출장족·초보여행자\n\n"
+        "유형E 트렌드·현대맥락 [0-1개. 설명 명시 시만]\n"
+        "  예) 워케이션·소도시여행·다크투어리즘·지속가능여행\n\n"
+        "금지: 단독 '여행' 및 '국내여행'·'해외여행' 단독 표기\n"
+        "금지: 감상어(힐링·설렘·낭만적·특별한)\n"
     ),
     "기타": (
-        "이 책은 일반 도서입니다.\n"
-        "- 분류·설명·목차에서 핵심 주제 균형있게 추출. 예) 세계여행·육아심리·동양고전\n"
+        "이 책은 명확한 전문분야로 분류하기 어려운 도서입니다(전집·세트상품, 분류 실패 등 포함).\n"
+        "아래 4개 슬롯 안에서만 키워드 선택. 총합 최대 5개. 무리하게 채우지 말 것.\n"
+        "다른 분야보다 느슨하게 적용하되, 상품형태어·감상어는 동일하게 금지.\n\n"
+        "유형A 핵심 주제·분야명 [1개, 필수]\n"
+        "  분류·제목·목차에서 파악되는 가장 구체적인 주제. 전집/세트면 대상연령+장르로.\n"
+        "  예) 초등학습만화전집·유아창작동화전집·세계여행에세이·육아심리·동양고전\n\n"
+        "유형B 소재·구성 [0-2개]\n"
+        "  책이 실제로 다루는 구체 소재. 추상어 금지.\n"
+        "  예) 과학원리·역사인물·경제개념·생활영어·전래동화\n\n"
+        "유형C 대상 독자층 [0-1개. 명시된 경우만]\n"
+        "  예) 초등저학년·미취학아동·청소년·성인초보자\n\n"
+        "유형D 트렌드·현대맥락 [0-1개. 명시된 경우만]\n"
+        "  예) 문해력·창의사고력·디지털리터러시\n\n"
+        "금지: 단독 '전집'·'세트'·'시리즈' 등 상품형태어\n"
+        "금지: 감상어·메타표현\n"
     ),
 }
 
@@ -375,7 +443,6 @@ CATEGORY_MAP = {
     "자기계발": "자기계발",
     "과학": "자연과학",
     "컴퓨터": "IT컴퓨터",
-    "모바일": "IT컴퓨터",
     "건강": "생활실용",
     "취미": "생활실용",
     "요리": "생활실용",
@@ -383,10 +450,10 @@ CATEGORY_MAP = {
     "예술": "예술",
     "대중문화": "예술",
     "대학교재": "교육",
-    "외국어": "교육",
-    "여행": "기타",
+    "외국어": "외국어",
+    "여행": "여행",
     "전집": "기타",
-    "좋은부모": "기타",
+    "좋은부모": "교육",
 }
 
 # 단순 장르명 필터 — 한정어 없이 장르만 단독으로 쓰인 경우 (예: 에세이, 소설, 희곡)
@@ -542,6 +609,12 @@ LOW_VALUE_KEYWORDS = {
     "자연계열",
     "예체능계열",
     "사범계열",
+    "경상계열",    # 대학교재 카테고리 fallback에서 자주 출현
+    "이공계열",
+    # 외국어 학습 일반어
+    "외국어",      # 단독 사용 (영어회화·토익 등 복합어는 허용)
+    "자기주도학습", # 어느 외국어·교육 도서에나 붙는 무의미 라벨
+    "종합",        # 단독 사용
     # 자기계발 카테고리명 (fallback 차단)
     "성공학",
     "성공",
@@ -553,6 +626,14 @@ LOW_VALUE_KEYWORDS = {
     "에필로그",
     "맺음말",
     "나가며",
+    # 텍스트 fallback 쓰레기 — 목차/챕터 제목에서 파생
+    "Part",
+    "Chapter",
+    "Vol",
+    "Section",
+    "무엇인가",
+    "내가",
+    "찾기",
 }
 
 CONTENT_FORMAT_TOKENS = ("팁", "비결", "상식", "추천", "모음")
@@ -590,11 +671,65 @@ CATEGORY_CANDIDATE_DENY = {
     "역학",
     "국내도서",
     "외국도서",
+    "외국어",      # 단독 상위분류어
+    "영어",        # 단독 (영어회화·영어독해 등 복합어는 허용)
+    "여행",        # 단독 상위분류어 (일본여행·국내여행 등 복합어는 허용)
+    "전집",
+    "세트",
+    "시리즈",
+    "육아",        # 단독 (육아법·애착육아 등 복합어는 허용)
+    "좋은부모",
 }
 
 
-def get_category_group(category: str) -> str:
-    """알라딘 카테고리 문자열에서 대분류를 찾아 반환합니다."""
+# ISBN 부가기호(EA_ADD_CODE) 마지막 3자리 → category_group.
+# 알라딘 카테고리 텍스트 라우팅이 "기타"·"인문학" 캐치올로 떨어질 때만 보조로 사용.
+# KDC 100구분(강) 공식표(docs/korean_catalog_appendix_2.csv) 기준으로 검증·수정함.
+# 매핑이 없는 강(000-090 총류 다수, 500/520/530/550/570/580 기술과학 세부,
+# 700/710 언어일반·한국어 등)은 의도적으로 비워둠 — 억지로 끼워맞추지 않고 "기타" 유지.
+# 순서 중요 — 좁은 구간을 넓은 구간보다 먼저 확인해야 함.
+_KDC_CONTENT_CODE_RANGES: list[tuple[int, int, str]] = [
+    (814, 814, "에세이"),        # 한국문학 중 수필(목 단위 세분류)
+    (800, 819, "문학"),          # 800 문학일반 + 810 한국문학
+    (820, 899, "문학"),          # 820-890 중국·일본·영미·기타 각국문학
+    (980, 989, "여행"),          # 지리 및 관광
+    (900, 999, "역사"),          # 나머지 역사 강 전체(아시아~오세아니아·전기/족보)
+    (100, 179, "철학"),          # 철학일반~논리학
+    (180, 189, "심리학"),        # 심리학(KDC 원표상 역술·풍수지리도 이 강에 혼재)
+    (190, 199, "철학"),          # 윤리학·도덕철학
+    (200, 299, "종교/역학"),     # 종교 전체
+    (320, 329, "경제경영"),      # 경제학(마케팅·재테크·금융 등)
+    (330, 339, "사회정치"),      # 사회학·사회문제 — 경제경영이 아님(구 매핑 오류 수정)
+    (370, 379, "교육"),          # 교육학
+    (300, 399, "사회정치"),      # 나머지 사회과학 강(통계·정치·행정·법학·풍습·군사)
+    (400, 499, "자연과학"),      # 자연과학 전체
+    (510, 510, "생활실용"),      # 의학·약학·보건학(다이어트·요가 등 포함, 건강 프롬프트와 결 맞음)
+    (540, 540, "생활실용"),      # 건축 — 생활실용 프롬프트에 건축 유형 이미 존재
+    (560, 560, "IT컴퓨터"),      # 전기·통신·전자·반도체·자동제어·전산공학 — 진짜 IT/컴퓨터 강
+    (590, 599, "생활실용"),      # 생활과학(가정관리·의복·식품·요리·육아)
+    (600, 689, "예술"),          # 예술 전체(오락·스포츠 제외)
+    (690, 699, "생활실용"),      # 오락·스포츠·등산·트래킹 — 예술이 아님(구 매핑 오류 수정)
+    (720, 799, "외국어"),        # 각국 외국어(710 한국어는 제외 — 외국어 학습 프롬프트와 안 맞음)
+]
+
+# 부가기호 보정을 적용할 캐치올 그룹 — 알라딘 카테고리로 구체 분야를 못 찾은 경우만
+_KDC_OVERRIDE_TARGET_GROUPS = frozenset({"기타", "인문학"})
+
+
+def kdc_content_code_to_group(content_code: str) -> str | None:
+    """3자리 내용분류코드 → category_group. 매핑 없으면 None."""
+    code = (content_code or "").strip()
+    if len(code) != 3 or not code.isdigit():
+        return None
+    n = int(code)
+    for lo, hi, group in _KDC_CONTENT_CODE_RANGES:
+        if lo <= n <= hi:
+            return group
+    return None
+
+
+def _category_group_from_text(category: str) -> str:
+    """알라딘 카테고리 문자열만으로 대분류를 찾는다(기존 로직)."""
     cat = category or ""
     # 인문학 하위분야 세분화 — 상위 "인문학" 매치 전에 먼저 확인
     if "인문학" in cat:
@@ -602,13 +737,15 @@ def get_category_group(category: str) -> str:
             return "심리학"
         if "철학" in cat:
             return "철학"
+        if "역사" in cat:   # 인문학 > 역사/문화 — "인문학" 키보다 "역사" 키 우선
+            return "역사"
     # 사회과학 하위분야 세분화 — "사회과학" 매치 전에 먼저 확인
     if "경제경영" in cat:
         return "경제경영"
     # 사회과학>교육학은 교육 그룹으로 처리
     if "사회과학" in cat and "교육학" in cat:
         return "교육"
-    # 예술/대중문화 — 건축만 기술과학으로 분기, 나머지는 모두 예술 그룹으로 처리
+    # 예술/대중문화 — 건축만 생활실용으로 분기, 나머지는 모두 예술 그룹으로 처리
     if "예술" in cat or "대중문화" in cat:
         if "건축" in cat:
             return "생활실용"   # 건축 실용·사례집은 생활실용 프롬프트가 더 적합
@@ -623,9 +760,23 @@ def get_category_group(category: str) -> str:
     return "기타"
 
 
-def get_category_prompt(category: str) -> str:
+def get_category_group(category: str, content_code: str = "") -> str:
+    """알라딘 카테고리 문자열에서 대분류를 찾아 반환합니다.
+
+    알라딘 라우팅 결과가 "기타"·"인문학" 캐치올이고 ISBN 부가기호로 얻은
+    content_code가 있으면, 부가기호 기반 매핑으로 보정한다.
+    """
+    group = _category_group_from_text(category)
+    if group in _KDC_OVERRIDE_TARGET_GROUPS and content_code:
+        override = kdc_content_code_to_group(content_code)
+        if override:
+            return override
+    return group
+
+
+def get_category_prompt(category: str, content_code: str = "") -> str:
     """대분류에 맞는 프롬프트를 반환합니다."""
-    group = get_category_group(category)
+    group = get_category_group(category, content_code)
     return CATEGORY_PROMPTS.get(group, CATEGORY_PROMPTS["기타"])
 
 
@@ -758,14 +909,15 @@ def _build_input(
     desc_max_chars: int = 600,
     toc_max_chars: int = 300,
     pub_desc_max_chars: int = 600,
+    content_code: str = "",
 ) -> str:
     """ISBN별 동적 입력 텍스트 생성."""
     parts = [p.strip() for p in (category or "").split(">") if p.strip()]
     cat_tail = " ".join(parts[-2:]) if len(parts) >= 2 else (parts[-1] if parts else "")
     forbidden = build_forbidden_set(title, authors)
     forbidden_list = ", ".join(sorted(forbidden)) or "(없음)"
-    category_group = get_category_group(category)
-    category_prompt = get_category_prompt(category)
+    category_group = get_category_group(category, content_code)
+    category_prompt = get_category_prompt(category, content_code)
     desc_trimmed = (description or "")[:desc_max_chars]
     toc_trimmed = (toc or "")[:toc_max_chars]
     pub_desc_trimmed = (publisher_desc or "")[:pub_desc_max_chars]
@@ -858,6 +1010,12 @@ def _extract_backup_candidates(category: str, toc: str, description: str) -> lis
         "단순히", "구체적", "올바른", "작은", "변화", "모음", "상식", "추천",
         "활기찬", "품격있는", "품격노년", "치과의사팁", "비결", "팁",
         "오래", "사는", "아프지", "보내는",
+        # 영문 섹션 표지 (목차·챕터 제목에서 파생)
+        "Part", "Chapter", "Vol", "Section", "Unit", "Lesson",
+        # 한국어 대명사·의문사
+        "내가", "그가", "우리가", "무엇인가", "어떻게",
+        # 동사 명사화 (문장에서 이탈한 형태)
+        "찾기", "하기", "되기", "쓰기",
     }
     out: list[str] = []
     for t in tokens:
@@ -865,6 +1023,13 @@ def _extract_backup_candidates(category: str, toc: str, description: str) -> lis
         if len(w) < 2 or len(w) > 10:
             continue
         if w in deny:
+            continue
+        # 한국어 어미가 붙은 비명사 제거 — 강사는·훈련하는·흔들리면 등
+        # "는" 종결: 한국어 명사는 "는"으로 끝나지 않음 (도전·도면은 2자라 해당 없음)
+        if re.search(r"^[가-힣]{2,}는$", w):
+            continue
+        # "면" 종결 3글자+: 조건형 어미 (흔들리면·생각하면). 도면·평면·화면은 2자라 안 걸림
+        if re.search(r"^[가-힣]{3,}면$", w):
             continue
         out.append(w)
     return out
@@ -881,9 +1046,9 @@ _GENRE_FALLBACKS: dict[str, list[str]] = {
 }
 
 
-def _extract_category_candidates(category: str) -> list[str]:
+def _extract_category_candidates(category: str, content_code: str = "") -> list[str]:
     """분류 체인의 구체 하위 분야명을 보강 후보로 사용한다."""
-    category_group = get_category_group(category)
+    category_group = get_category_group(category, content_code)
     candidates: list[str] = []
     for part in reversed([p.strip() for p in (category or "").split(">") if p.strip()]):
         if "국립중앙도서관" in part or "kdc" in norm_text(part):
@@ -924,6 +1089,7 @@ def finalize_653(
     category: str = "",
     toc: str = "",
     description: str = "",
+    content_code: str = "",
 ) -> tuple[str, Field653Quality]:
     """AI 출력에서 금지어·저효용어를 제거하고 $a 형식과 품질 지표를 함께 반환."""
     keywords = [k.strip() for k in ai_output.split("$a") if k.strip()]
@@ -934,7 +1100,7 @@ def finalize_653(
     }
     cat_norm = norm_text(category)
     allow_bio = any(t in cat_norm for t in ("전기", "평전", "작가론", "인물", "회고록"))
-    category_group = get_category_group(category)
+    category_group = get_category_group(category, content_code)
 
     valid_keywords: list[str] = []
     seen: set[str] = set()
@@ -973,9 +1139,9 @@ def finalize_653(
             if len(valid_keywords) >= min_keywords:
                 break
 
-    category_fallback_used = len(valid_keywords) < min_keywords
-    if category_fallback_used:
-        for kw in _extract_category_candidates(category):
+    _count_before_fallback = len(valid_keywords)
+    if _count_before_fallback < min_keywords:
+        for kw in _extract_category_candidates(category, content_code):
             n = norm_text(kw)
             if n in seen:
                 continue
@@ -987,6 +1153,8 @@ def finalize_653(
             valid_keywords.append(kw)
             if len(valid_keywords) >= min_keywords:
                 break
+    # 카테고리 fallback이 실제로 키워드를 추가한 경우에만 플래그/페널티 적용
+    category_fallback_used = len(valid_keywords) > _count_before_fallback
 
     final_count = len(valid_keywords[:max_keywords])
 
@@ -1047,8 +1215,12 @@ async def generate_653_subfield_line(
     description = meta.description
     toc = meta.toc
     publisher_desc = meta.publisher_desc
+    content_code = meta.content_code
 
-    input_text = _build_input(category, title, authors, description, toc, max_keywords, publisher_desc)
+    input_text = _build_input(
+        category, title, authors, description, toc, max_keywords, publisher_desc,
+        content_code=content_code,
+    )
     try:
         raw, usage = await _call_learned_agent_api(input_text, s)
     except Exception as e:
@@ -1061,7 +1233,7 @@ async def generate_653_subfield_line(
         raw = ""
     kws = parse_keyword_line(raw)
     ai_output = "".join(f"$a{kw}" for kw in kws if should_keep_keyword(kw, forbidden))
-    category_group = get_category_group(category)
+    category_group = get_category_group(category, content_code)
     effective_min = 3 if category_group == "문학" else min_keywords
     subfield_line, quality = finalize_653(
         ai_output,
@@ -1071,6 +1243,7 @@ async def generate_653_subfield_line(
         category=category,
         toc=toc,
         description=description,
+        content_code=content_code,
     )
     if not subfield_line:
         return None, "유효한 키워드를 추출하지 못했습니다.", usage, quality

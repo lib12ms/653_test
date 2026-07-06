@@ -21,12 +21,14 @@ class AladinMetadata653(BaseModel):
     description: str = ""
     toc: str = ""
     publisher_desc: str = ""  # 출판사 제공 책소개 (getContents.aspx 크롤링)
+    content_code: str = ""  # ISBN 부가기호(EA_ADD_CODE) 마지막 3자리 — 분야 라우팅 보조 신호
 
 
 class NlkMetadataHint(BaseModel):
     """보강 힌트(현행 파이프라인: KPIPA에서 채우는 경우 목차 `toc`만 사용)."""
 
     class_no: str = ""
+    ea_add_code: str = ""  # ISBN 부가기호(5자리, Seoji EA_ADD_CODE) — KDC보다 실제로 채워지는 필드
     kwd: str = ""
     subjects: list[str] = Field(default_factory=list)
     description: str = ""

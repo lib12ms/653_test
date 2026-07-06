@@ -15,6 +15,7 @@ from . import ai_service
 from .config import get_settings
 from .sheets_service import diagnose_sheets, save_golden_data
 from .fetcher import fetch_aladin_for_653, fetch_secondary_metadata_hint, merge_aladin_with_nlk
+from .nlk_client import fetch_kdc_content_code_by_isbn
 from .models import (
     AladinMetadata653,
     Field653FromIsbnRequest,
@@ -141,6 +142,7 @@ async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
         f"{req.isbn.strip()}|{s.openai_model}|"
         f"{s.max_keywords_653}|{s.min_keywords_653}|"
         f"k{int(bool(s.kpipa_enable and s.kpipa_api_key))}|"
+        f"n{int(bool(s.nlk_enable and s.nlk_api_key))}|"
         f"agent:{conv_key}"
     )
     cached = cache.get(cache_key)
@@ -152,9 +154,12 @@ async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
             req.isbn, settings=s, include_debug=True, client=http_client
         )
         secondary_task = fetch_secondary_metadata_hint(req.isbn, settings=s, client=http_client)
-        (base_meta, preprocess_debug), (nlk_hint, hint_src, kpipa_raw) = await asyncio.gather(
-            base_meta_task, secondary_task
-        )
+        content_code_task = fetch_kdc_content_code_by_isbn(req.isbn, settings=s, client=http_client)
+        (
+            (base_meta, preprocess_debug),
+            (nlk_hint, hint_src, kpipa_raw),
+            content_code,
+        ) = await asyncio.gather(base_meta_task, secondary_task, content_code_task)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
@@ -162,7 +167,9 @@ async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
         raise HTTPException(status_code=502, detail=f"알라딘 API 오류: {e}") from e
 
     merge_src = "kpipa" if hint_src == "kpipa" else "none"
-    meta = merge_aladin_with_nlk(base_meta, nlk_hint, settings=s, secondary_source=merge_src)
+    meta = merge_aladin_with_nlk(
+        base_meta, nlk_hint, settings=s, secondary_source=merge_src, content_code=content_code
+    )
     response = await _build_response_from_meta(
         meta,
         s.max_keywords_653,

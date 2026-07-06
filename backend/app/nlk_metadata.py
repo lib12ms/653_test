@@ -112,10 +112,15 @@ def parse_nlk_xml(xml_text: str) -> NlkMetadataHint:
 
 
 def hint_from_seoji_doc(doc: dict[str, Any]) -> NlkMetadataHint:
-    """ISBN 서지(Seoji) API docs[] 첫 행 → NlkMetadataHint."""
+    """ISBN 서지(Seoji) API docs[] 첫 행 → NlkMetadataHint.
+
+    실응답에서 KDC 필드는 대부분 비어 있고 EA_ADD_CODE(진짜 ISBN 부가기호)가
+    채워지는 것으로 확인됨(2026-07-03 스파이크) — 둘 다 기록해둔다.
+    """
     if not isinstance(doc, dict):
         return NlkMetadataHint()
     kdc = to_text(doc.get("KDC") or doc.get("kdc"))
+    ea_add_code = to_text(doc.get("EA_ADD_CODE") or doc.get("ea_add_code"))
     intro = to_text(doc.get("BOOK_INTRODUCTION"))
     summary = to_text(doc.get("BOOK_SUMMARY"))
     tb_cnt = to_text(doc.get("BOOK_TB_CNT"))
@@ -123,6 +128,7 @@ def hint_from_seoji_doc(doc: dict[str, Any]) -> NlkMetadataHint:
     description = "\n".join(parts) if parts else ""
     return NlkMetadataHint(
         class_no=kdc,
+        ea_add_code=ea_add_code,
         kwd="",
         subjects=[],
         description=description,
@@ -132,9 +138,25 @@ def hint_from_seoji_doc(doc: dict[str, Any]) -> NlkMetadataHint:
     )
 
 
+def content_code_from_hint(h: NlkMetadataHint) -> str:
+    """NlkMetadataHint → 3자리 내용분류코드(KDC 강목 상당).
+
+    EA_ADD_CODE(5자리) 마지막 3자리를 우선 사용하고, 없으면 class_no(KDC)
+    앞 3자리로 대체한다. 유효하지 않으면 빈 문자열.
+    """
+    ea = (h.ea_add_code or "").strip()
+    if len(ea) >= 5 and ea.isdigit():
+        return ea[-3:]
+    kdc = (h.class_no or "").strip()
+    if len(kdc) >= 3 and kdc[:3].isdigit():
+        return kdc[:3]
+    return ""
+
+
 def nlk_hint_nonempty(h: NlkMetadataHint) -> bool:
     return bool(
         h.class_no
+        or h.ea_add_code
         or h.kwd
         or h.subjects
         or h.description

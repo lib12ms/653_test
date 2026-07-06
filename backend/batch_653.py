@@ -32,10 +32,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 import httpx
 
 from app import ai_service
-from app.ai_service import build_marc_653_line
+from app.ai_service import build_marc_653_line, get_category_group
 from app.config import Settings
 from app.fetcher import fetch_aladin_for_653, fetch_secondary_metadata_hint, merge_aladin_with_nlk
 from app.models import parse_653_keywords
+from app.nlk_client import fetch_kdc_content_code_by_isbn
 
 # ── ISBN 목록 (파일 미지정 시 사용) ──────────────────────────────────────
 ISBNS: list[str] = [
@@ -94,8 +95,8 @@ CONCURRENCY = 1  # 순차 처리 (rate limit 방지)
 REQUEST_DELAY_S = 3  # 요청 간 대기 시간(초)
 
 # ── 검토 필요 판단 기준 ────────────────────────────────────────────────────
-REVIEW_SCORE_THRESHOLD = 0.7   # 품질점수 미만이면 검토 대상
-REVIEW_MIN_KEYWORDS = 5        # 최종 키워드 수 미달이면 검토 대상
+REVIEW_SCORE_THRESHOLD = 0.55  # 품질점수 미만이면 검토 대상 (4개 양호 키워드 = 0.571로 통과)
+REVIEW_MIN_KEYWORDS = 4        # 최종 키워드 수 미달이면 검토 대상
 
 # ── 처리 함수 ─────────────────────────────────────────────────────────────
 
@@ -114,6 +115,8 @@ async def process_isbn(
         "제목": "",
         "저자": "",
         "카테고리": "",
+        "부가기호": "",
+        "분야그룹": "",
         "기존키워드": old_keyword,
         "653필드": "",
         "키워드목록": "",
@@ -137,8 +140,13 @@ async def process_isbn(
             result["카테고리"] = base_meta.category
 
             nlk, hint_src, _ = await fetch_secondary_metadata_hint(isbn, settings=settings, client=client)
+            content_code = await fetch_kdc_content_code_by_isbn(isbn, settings=settings, client=client)
             merge_src = "kpipa" if hint_src == "kpipa" else "none"
-            meta = merge_aladin_with_nlk(base_meta, nlk, settings=settings, secondary_source=merge_src)
+            meta = merge_aladin_with_nlk(
+                base_meta, nlk, settings=settings, secondary_source=merge_src, content_code=content_code
+            )
+            result["부가기호"] = content_code
+            result["분야그룹"] = get_category_group(meta.category, meta.content_code)
 
             raw_line, err, _usage, quality = await ai_service.generate_653_subfield_line(
                 meta,
@@ -181,7 +189,7 @@ async def process_isbn(
 # ── 저장 ─────────────────────────────────────────────────────────────────
 
 CSV_COLUMNS = [
-    "순번", "ISBN", "제목", "저자", "카테고리",
+    "순번", "ISBN", "제목", "저자", "카테고리", "부가기호", "분야그룹",
     "기존키워드", "653필드", "키워드목록",
     "AI생성수", "차단수", "최종수", "품질점수", "경고플래그", "검토필요",
     "오류",
