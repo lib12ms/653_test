@@ -149,6 +149,7 @@ async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
     if cached is not None:
         return cached
 
+    request_start = time.monotonic()
     try:
         base_meta_task = fetch_aladin_for_653(
             req.isbn, settings=s, include_debug=True, client=http_client
@@ -180,6 +181,7 @@ async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
         hint_source=hint_src if hint_src != "none" else None,
         kpipa_raw=kpipa_raw,
     )
+    response.duration_ms = round((time.monotonic() - request_start) * 1000, 1)
     if response.success:
         cache.set(cache_key, response)
     return response

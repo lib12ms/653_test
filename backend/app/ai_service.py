@@ -1329,6 +1329,12 @@ async def generate_653_subfield_line(
                 usage = usage_retry
         raw = raw_retry
 
+    if usage is not None:
+        usage.breakdown = _estimate_prompt_token_breakdown(
+            input_text, category, title, authors, description, toc, publisher_desc,
+            usage.prompt_tokens,
+        )
+
     forbidden = build_forbidden_set(title, authors)
     if _REFUSAL_RE.search(raw or ""):
         logger.warning("AI 재시도에서도 거절 응답, fallback 처리: %.80s", raw)
@@ -1351,6 +1357,40 @@ async def generate_653_subfield_line(
         return None, "유효한 키워드를 추출하지 못했습니다.", usage, quality
 
     return subfield_line, None, usage, quality
+
+
+def _estimate_prompt_token_breakdown(
+    input_text: str,
+    category: str,
+    title: str,
+    authors: str,
+    description: str,
+    toc: str,
+    publisher_desc: str,
+    prompt_tokens: int,
+) -> dict[str, int]:
+    """입력 프롬프트를 "지침"과 "도서 정보" 두 섹션으로 나눠 글자수 비율로
+    prompt_tokens를 배분한 추정치. OpenAI가 섹션별 토큰수를 알려주지 않아서
+    글자수 비율로 근사하며, 합계는 항상 실제 prompt_tokens와 같도록 맞춘다.
+    """
+    desc_trimmed = (description or "")[:600]
+    toc_trimmed = (toc or "")[:300]
+    pub_desc_trimmed = (publisher_desc or "")[:600]
+    forbidden_list_len = len(", ".join(sorted(build_forbidden_set(title, authors))) or "(없음)")
+    parts = [p.strip() for p in (category or "").split(">") if p.strip()]
+    cat_tail_len = len(" ".join(parts[-2:]) if len(parts) >= 2 else (parts[-1] if parts else ""))
+
+    book_data_len = (
+        len(category or "") + cat_tail_len + len(title or "") + len(authors or "")
+        + len(desc_trimmed) + len(toc_trimmed) + len(pub_desc_trimmed) + forbidden_list_len
+    )
+    total_len = len(_STATIC_INSTRUCTIONS) + len(input_text)
+    if total_len <= 0 or prompt_tokens <= 0:
+        return {}
+    book_data_len = max(0, min(book_data_len, total_len))
+    book_tokens = max(0, min(round(prompt_tokens * book_data_len / total_len), prompt_tokens))
+    instruction_tokens = prompt_tokens - book_tokens
+    return {"지침 프롬프트": instruction_tokens, "도서 정보(API·크롤링)": book_tokens}
 
 
 def build_marc_653_line(subfield_line: str) -> str:

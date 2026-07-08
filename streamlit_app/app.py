@@ -1,5 +1,5 @@
 """
-I2M 653 필드 UI — 단건(ISBN) 조회 + 배치 처리 + 품질 평가
+I2M 653 필드 UI — 단건(ISBN) 조회 + 배치 처리
 """
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -23,8 +22,6 @@ _backend = _root / "backend"
 for _p in (_here, _backend):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
-
-from quality_rubric import EVAL_COLUMNS, RUBRIC_GUIDE_KO, empty_eval_fields
 
 BACKEND_URL = st.secrets["BACKEND_URL"].rstrip("/")
 DEFAULT_TIMEOUT = int(os.getenv("I2M_653_HTTP_TIMEOUT", "60"))
@@ -49,28 +46,68 @@ def post_json(path: str, body: dict[str, Any]) -> tuple[dict[str, Any] | None, s
 def _render_editable_653(data: dict[str, Any], key_prefix: str, isbn: str = "") -> None:
     st.subheader("653 결과")
 
-    # ── 메타 정보 배지 (크롤링 보완 / KPIPA 목차 병합) ──────────────────────
+    # ── 653 생성에 실제로 사용된 정보원 (API + 크롤링 통합 표시) ────────────
     dbg = data.get("preprocess_debug") or {}
-    if dbg.get("crawl_used") == "True":
-        crawled_fields = []
-        if dbg.get("crawl_desc_filled") == "True":
-            crawled_fields.append("설명")
-        if dbg.get("crawl_toc_filled") == "True":
-            crawled_fields.append("목차")
-        if crawled_fields:
-            pw = " (Playwright)" if dbg.get("playwright_used") == "True" else ""
-            st.info(f"알라딘 상세페이지 크롤링{pw}으로 **{', '.join(crawled_fields)}** 보완됨")
-        else:
-            if dbg.get("playwright_used") != "True":
-                st.warning("알라딘 목차 크롤링: Playwright 미설치 — `pip install playwright && playwright install chromium`")
-            else:
-                st.warning("알라딘 상세페이지 크롤링 시도했으나 목차를 찾지 못했습니다.")
+    sources: list[str] = []
 
-    if dbg.get("desc_merged_with_publisher") == "True":
-        st.info("알라딘 책소개가 짧아(150자 미만) 출판사 제공 책소개를 병합했습니다.")
+    if dbg.get("crawl_desc_filled") == "True":
+        sources.append("크롤링 상세설명")
+    elif (dbg.get("description_clean") or "").strip():
+        sources.append("알라딘 API 상세설명")
+
+    if (dbg.get("publisher_desc") or "").strip():
+        if dbg.get("desc_merged_with_publisher") == "True":
+            sources.append("크롤링 출판사 책소개(상세설명에 병합)")
+        else:
+            sources.append("크롤링 출판사 책소개")
+
+    if dbg.get("crawl_toc_filled") == "True":
+        sources.append("크롤링 목차")
+    elif (dbg.get("toc_clean") or "").strip():
+        sources.append("알라딘 API 목차")
 
     if data.get("hint_source") == "kpipa":
-        st.info("KPIPA 목차가 병합되었습니다.")
+        sources.append("KPIPA 목차")
+
+    # ── 정보원 / 소요시간 / 토큰 사용량 3단 표시 ─────────────────────────────
+    col_src, col_time, col_tokens = st.columns(3)
+
+    with col_src:
+        st.caption("📚 정보원")
+        st.markdown(", ".join(sources) if sources else "_정보 없음_")
+
+    with col_time:
+        st.caption("⏱ 소요시간")
+        duration_ms = data.get("duration_ms")
+        if duration_ms is not None:
+            st.markdown(f"{duration_ms / 1000:.1f}초")
+        else:
+            st.markdown("_—_")
+
+    with col_tokens:
+        st.caption("🔢 토큰 사용량")
+        usage = data.get("token_usage") or {}
+        total_tokens = usage.get("total_tokens")
+        if total_tokens:
+            st.markdown(f"총 {total_tokens:,}")
+            breakdown = usage.get("breakdown") or {}
+            for label, count in breakdown.items():
+                st.caption(f"· {label}: {count:,}")
+            completion_tokens = usage.get("completion_tokens")
+            if completion_tokens:
+                st.caption(f"· 생성 결과: {completion_tokens:,}")
+        else:
+            st.markdown("_—_")
+
+    if (
+        dbg.get("crawl_used") == "True"
+        and dbg.get("crawl_toc_filled") != "True"
+        and not (dbg.get("toc_clean") or "").strip()
+    ):
+        if dbg.get("playwright_used") != "True":
+            st.warning("알라딘 목차 크롤링: Playwright 미설치 — `pip install playwright && playwright install chromium`")
+        else:
+            st.warning("알라딘 상세페이지 크롤링 시도했으나 목차를 찾지 못했습니다.")
 
     # ── 키워드 편집 ──────────────────────────────────────────────────────────
     keywords = [str(x).strip() for x in (data.get("keywords") or []) if str(x).strip()]
@@ -85,15 +122,20 @@ def _render_editable_653(data: dict[str, Any], key_prefix: str, isbn: str = "") 
         st.session_state[state_key] = default_text
         st.session_state[source_key] = current_source
 
+    st.markdown("#### 키워드 편집")
     edited_text = st.text_area(
-        "키워드 (한 줄에 하나씩, 직접 수정 가능)",
+        "키워드",
         height=180,
         key=state_key,
+        label_visibility="collapsed",
+        placeholder="키워드를 한 줄에 하나씩 입력하세요",
+        help="한 줄에 키워드 하나씩. 수정·삭제·추가 후 Ctrl+Enter로 반영됩니다.",
     )
     edited_keywords = [line.strip() for line in edited_text.splitlines() if line.strip()]
     edited_tag = "=653  \\\\" + "".join(f"$a{kw.replace(' ', '')}" for kw in edited_keywords)
 
-    st.markdown("**653 (MRK)**")
+    st.caption(f"{len(edited_keywords)}개 키워드")
+    st.markdown("###### 653 (MRK 포맷)")
     st.code(edited_tag, language="text")
 
     token_usage = data.get("token_usage") or {}
@@ -155,51 +197,8 @@ def _make_csv_bytes(rows: list[dict]) -> bytes:
     return buf.getvalue().encode("utf-8-sig")
 
 
-_EVAL_MACHINE_COLS = [
-    "ISBN",
-    "제목",
-    "카테고리",
-    "KPIPA_목차_글자수",
-    "키워드목록",
-    "653필드",
-    "오류",
-]
-
-
-def _make_eval_labeling_csv_bytes(df: pd.DataFrame) -> bytes:
-    cols = _EVAL_MACHINE_COLS + list(EVAL_COLUMNS)
-    buf = io.BytesIO()
-    df[cols].to_csv(buf, index=False, encoding="utf-8-sig")
-    return buf.getvalue()
-
-
-def _build_eval_column_config() -> dict[str, Any]:
-    cfg: dict[str, Any] = {}
-    for c in _EVAL_MACHINE_COLS:
-        cfg[c] = st.column_config.TextColumn(c, disabled=True)
-    cfg["평가_종합"] = st.column_config.SelectboxColumn(
-        "평가_종합",
-        options=["", "양호", "보통", "불량"],
-        help="사서 종합 판정",
-    )
-    score_opts = ["", "1", "2", "3", "4", "5"]
-    cfg["평가_검색효용_1to5"] = st.column_config.SelectboxColumn(
-        "검색효용(1~5)",
-        options=score_opts,
-        help="1=낮음, 5=높음",
-    )
-    cfg["평가_주제부합_1to5"] = st.column_config.SelectboxColumn(
-        "주제부합(1~5)",
-        options=score_opts,
-        help="1=낮음, 5=높음",
-    )
-    for c in ("평가_불량태그", "평가_메모", "평가자", "평가일"):
-        cfg[c] = st.column_config.TextColumn(c)
-    return cfg
-
-
 # ── 탭 ───────────────────────────────────────────────────────────────────────
-tab_single, tab_batch, tab_eval = st.tabs(["단건 조회", "배치 처리", "품질 평가"])
+tab_single, tab_batch = st.tabs(["단건 조회", "배치 처리"])
 
 # ── 탭 1: 단건 ───────────────────────────────────────────────────────────────
 with tab_single:
@@ -278,74 +277,3 @@ with tab_batch:
             file_name="653_배치결과.csv",
             mime="text/csv",
         )
-
-# ── 탭 3: 품질 평가 (사서 라벨링) ───────────────────────────────────────────
-with tab_eval:
-    st.markdown(
-        "백엔드 API로 653을 생성한 뒤, 표에서 **평가_** 열만 채우고 CSV로 내려받습니다. "
-        "오프라인으로 `python 0516test/summarize_eval_csv.py <파일.csv>` 로 집계할 수 있습니다."
-    )
-    with st.expander("평가 기준 안내", expanded=False):
-        st.markdown(RUBRIC_GUIDE_KO)
-
-    isbn_eval = st.text_area(
-        "ISBN 목록 (한 줄에 하나)",
-        height=160,
-        placeholder="9788936433598\n9788954641326",
-        key="eval_isbn_area",
-    )
-
-    if st.button("653 불러와 평가 시트 만들기", type="primary", key="btn_eval_load"):
-        lines = [ln.strip() for ln in isbn_eval.splitlines() if ln.strip()]
-        if not lines:
-            st.warning("ISBN을 입력하세요.")
-        else:
-            eval_rows: list[dict[str, Any]] = []
-            prog = st.progress(0, text="653 생성 중…")
-            for i, isbn_item in enumerate(lines):
-                data, err = post_json("/api/field653", {"isbn": isbn_item})
-                aladin = (data or {}).get("aladin") or {}
-                kpipa_hint = (data or {}).get("nlk_hint") or {}
-                toc_s = (kpipa_hint.get("toc") or "").strip()
-                base = {
-                    "ISBN": isbn_item,
-                    "제목": aladin.get("title", ""),
-                    "카테고리": aladin.get("category", ""),
-                    "KPIPA_목차_글자수": len(toc_s) if toc_s else "",
-                    "키워드목록": " / ".join((data or {}).get("keywords") or []),
-                    "653필드": (data or {}).get("tag_653", ""),
-                    "오류": err or ((data or {}).get("error") or ""),
-                }
-                base.update(empty_eval_fields())
-                eval_rows.append(base)
-                prog.progress((i + 1) / len(lines), text=f"{i + 1}/{len(lines)} 완료")
-            st.session_state["eval_label_df"] = pd.DataFrame(eval_rows)
-
-    eval_df = st.session_state.get("eval_label_df")
-    if eval_df is not None and not eval_df.empty:
-        st.subheader("라벨링 표")
-        edited = st.data_editor(
-            eval_df,
-            column_config=_build_eval_column_config(),
-            hide_index=True,
-            use_container_width=True,
-            num_rows="fixed",
-            key="eval_data_editor",
-        )
-        st.session_state["eval_label_df"] = edited
-        st.download_button(
-            "평가 시트 CSV 다운로드",
-            data=_make_eval_labeling_csv_bytes(edited),
-            file_name="653_평가시트.csv",
-            mime="text/csv",
-            key="dl_eval_csv",
-        )
-
-st.divider()
-st.markdown(
-    "**실행:** `.streamlit/secrets.toml` 에 `BACKEND_URL` 설정 "
-    "(로컬: `http://127.0.0.1:8000` / 배포: `https://six53-test.onrender.com`). "
-    "백엔드: `cd backend && uvicorn app.main:app --reload`. "
-    "**품질 평가(오프라인):** `python 0516test/export_eval_sheet.py` 로 시트 생성 후 사서가 채우고, "
-    "`python 0516test/summarize_eval_csv.py 0516test/eval_sheet_….csv` 로 요약. 기준·컬럼 정의는 `0516test/quality_rubric.py`."
-)

@@ -65,6 +65,9 @@ class TokenUsage(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    breakdown: dict[str, int] = Field(default_factory=dict)
+    """입력 프롬프트를 구성 섹션별 글자수 비율로 나눈 추정 토큰수(합계=prompt_tokens).
+    예: {"지침 프롬프트": 812, "도서 정보(API·크롤링)": 214}"""
 
 
 class Field653Quality(BaseModel):
@@ -109,6 +112,8 @@ class Field653Response(BaseModel):
     )
     kpipa_raw: dict[str, Any] | None = None
     preprocess_debug: dict[str, str] | None = None
+    duration_ms: float | None = None
+    """요청 처리 소요시간(ms) — 알라딘/KPIPA/Seoji 조회 + AI 생성 전체 포함"""
 
 
 def parse_653_keywords(tag_653: str | None, *, max_keywords: int = 15) -> list[str]:
