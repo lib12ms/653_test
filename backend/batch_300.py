@@ -304,9 +304,10 @@ REVIEW_COLUMNS = [
 ]
 
 
-def save_csv(results: list[dict], out_dir: Path) -> tuple[Path, Path | None]:
+def save_csv(results: list[dict], out_dir: Path, count: int = 0) -> tuple[Path, Path | None]:
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    full_path = out_dir / f"653_신간300_{ts}.csv"
+    n = count or len(results)
+    full_path = out_dir / f"653_신간{n}_{ts}.csv"
 
     with open(full_path, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS, extrasaction="ignore")
@@ -316,7 +317,7 @@ def save_csv(results: list[dict], out_dir: Path) -> tuple[Path, Path | None]:
     review_rows = [r for r in results if r.get("검토필요") == "Y" or r.get("오류")]
     review_path: Path | None = None
     if review_rows:
-        review_path = out_dir / f"653_신간300_검토_{ts}.csv"
+        review_path = out_dir / f"653_신간{n}_검토_{ts}.csv"
         with open(review_path, "w", newline="", encoding="utf-8-sig") as f:
             writer = csv.DictWriter(f, fieldnames=REVIEW_COLUMNS, extrasaction="ignore")
             writer.writeheader()
@@ -364,7 +365,7 @@ async def main(target: int, cutoff_days: int) -> None:
 
     # ── 3단계: CSV 저장 ──────────────────────────────────────────────────────
     out_dir = Path(__file__).parent
-    full_path, review_path = save_csv(list(results_sorted), out_dir)
+    full_path, review_path = save_csv(list(results_sorted), out_dir, count=target)
 
     ok = sum(1 for r in results_sorted if not r.get("오류"))
     err = sum(1 for r in results_sorted if r.get("오류"))
@@ -391,7 +392,7 @@ async def main(target: int, cutoff_days: int) -> None:
 
 def cli() -> None:
     parser = argparse.ArgumentParser(description="알라딘 신간 대규모 배치 653 생성")
-    parser.add_argument("--count", type=int, default=300, help="수집 목표 권수 (기본 300)")
+    parser.add_argument("--count", type=int, default=500, help="수집 목표 권수 (기본 500)")
     parser.add_argument("--days", type=int, default=30, help="신간 기준 일수 (기본 30)")
     args = parser.parse_args()
     asyncio.run(main(args.count, args.days))
