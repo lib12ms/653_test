@@ -66,6 +66,9 @@ def _render_editable_653(data: dict[str, Any], key_prefix: str, isbn: str = "") 
             else:
                 st.warning("알라딘 상세페이지 크롤링 시도했으나 목차를 찾지 못했습니다.")
 
+    if dbg.get("desc_merged_with_publisher") == "True":
+        st.info("알라딘 책소개가 짧아(150자 미만) 출판사 제공 책소개를 병합했습니다.")
+
     if data.get("hint_source") == "kpipa":
         st.info("KPIPA 목차가 병합되었습니다.")
 
