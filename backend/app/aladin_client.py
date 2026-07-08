@@ -114,7 +114,11 @@ async def fetch_aladin_for_653(
             authors=clean_author_str(str(raw_author or "")),
             description=cleaned_desc.strip(),
             toc=cleaned_toc.strip(),
-            publisher_desc=raw_publisher_desc.strip(),
+            # 출판사 제공 책소개는 설명이 짧을 때만(위에서) description에 이미 병합됨.
+            # 여기서는 항상 비워둔다 — 안 그러면 _build_input()이 별도 섹션으로
+            # 한 번 더 넣어서 (a) 병합 안 된 경우에도 GPT에 전송되고 (b) 병합된
+            # 경우 내용이 두 번 들어가는 중복이 생긴다.
+            publisher_desc="",
         )
         if include_debug:
             dbg = {

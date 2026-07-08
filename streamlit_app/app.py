@@ -26,7 +26,7 @@ for _p in (_here, _backend):
 BACKEND_URL = st.secrets["BACKEND_URL"].rstrip("/")
 DEFAULT_TIMEOUT = int(os.getenv("I2M_653_HTTP_TIMEOUT", "60"))
 st.set_page_config(page_title="I2M — 653", page_icon="📚", layout="wide")
-st.title("I2M 653 필드 (자유주제어)")
+st.title("I2M 653 필드 (비통제색인어)")
 
 
 # ── 공통 유틸 ─────────────────────────────────────────────────────────────────
@@ -55,11 +55,8 @@ def _render_editable_653(data: dict[str, Any], key_prefix: str, isbn: str = "") 
     elif (dbg.get("description_clean") or "").strip():
         sources.append("알라딘 API 상세설명")
 
-    if (dbg.get("publisher_desc") or "").strip():
-        if dbg.get("desc_merged_with_publisher") == "True":
-            sources.append("크롤링 출판사 책소개(상세설명에 병합)")
-        else:
-            sources.append("크롤링 출판사 책소개")
+    if dbg.get("desc_merged_with_publisher") == "True":
+        sources.append("크롤링 출판사 책소개")
 
     if dbg.get("crawl_toc_filled") == "True":
         sources.append("크롤링 목차")
@@ -122,21 +119,27 @@ def _render_editable_653(data: dict[str, Any], key_prefix: str, isbn: str = "") 
         st.session_state[state_key] = default_text
         st.session_state[source_key] = current_source
 
-    st.markdown("#### 키워드 편집")
-    edited_text = st.text_area(
+    # 편집창을 그리기 전, 현재 세션 상태값으로 결과 미리보기를 먼저 표시한다.
+    current_text = st.session_state.get(state_key, default_text)
+    current_keywords = [line.strip() for line in current_text.splitlines() if line.strip()]
+    current_tag = "=653  \\\\" + "".join(f"$a{kw.replace(' ', '')}" for kw in current_keywords)
+
+    st.markdown("#### 653 키워드")
+    st.code(current_tag, language="text")
+
+    st.markdown("#### 키워드 에디터")
+    st.text_area(
         "키워드",
         height=180,
         key=state_key,
         label_visibility="collapsed",
         placeholder="키워드를 한 줄에 하나씩 입력하세요",
-        help="한 줄에 키워드 하나씩. 수정·삭제·추가 후 Ctrl+Enter로 반영됩니다.",
+        help="한 줄에 하나씩 입력\n\n수정 삭제 추가 후 ctrl+enter",
     )
-    edited_keywords = [line.strip() for line in edited_text.splitlines() if line.strip()]
-    edited_tag = "=653  \\\\" + "".join(f"$a{kw.replace(' ', '')}" for kw in edited_keywords)
+    st.caption(f"{len(current_keywords)}개 키워드")
 
-    st.caption(f"{len(edited_keywords)}개 키워드")
-    st.markdown("###### 653 (MRK 포맷)")
-    st.code(edited_tag, language="text")
+    edited_keywords = current_keywords
+    edited_tag = current_tag
 
     token_usage = data.get("token_usage") or {}
     if token_usage:
