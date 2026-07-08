@@ -1,0 +1,355 @@
+<title>ai_service.py 내부 구조 상세</title>
+<style>
+  :root {
+    --bg: #eef1ed;
+    --surface: #ffffff;
+    --surface-2: #e4e8e2;
+    --ink: #1b2320;
+    --ink-soft: #45504a;
+    --muted: #6b756e;
+    --line: #c9cfc7;
+    --line-strong: #a6b0a6;
+    --primary: #2b4c3f;
+    --primary-soft: #dde8e2;
+    --accent: #a8631b;
+    --accent-soft: #f3e3d1;
+    --blue: #3a5f8a;
+    --blue-soft: #dde6f0;
+    --red: #9a4a3f;
+    --red-soft: #f1ddd8;
+    --mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    --sans: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", -apple-system, BlinkMacSystemFont, sans-serif;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #141815; --surface: #1c221e; --surface-2: #232b25;
+    --ink: #e7eae5; --ink-soft: #c3cbc3; --muted: #93a099;
+    --line: #34403a; --line-strong: #47564d;
+    --primary: #7db99b; --primary-soft: #223a30;
+    --accent: #d99a4e; --accent-soft: #3a2c18;
+    --blue: #8fb2da; --blue-soft: #23324a;
+    --red: #d98f80; --red-soft: #3a2420;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141815; --surface: #1c221e; --surface-2: #232b25;
+      --ink: #e7eae5; --ink-soft: #c3cbc3; --muted: #93a099;
+      --line: #34403a; --line-strong: #47564d;
+      --primary: #7db99b; --primary-soft: #223a30;
+      --accent: #d99a4e; --accent-soft: #3a2c18;
+      --blue: #8fb2da; --blue-soft: #23324a;
+      --red: #d98f80; --red-soft: #3a2420;
+      color-scheme: dark;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); line-height: 1.6; padding: 48px 20px 96px;
+  }
+  .page { max-width: 1000px; margin: 0 auto; }
+  code, .mono { font-family: var(--mono); }
+
+  header.top { margin-bottom: 36px; }
+  .eyebrow {
+    font-size: 12.5px; letter-spacing: 0.08em; color: var(--accent);
+    font-weight: 600; text-transform: uppercase; margin-bottom: 10px;
+  }
+  h1 { font-size: 27px; font-weight: 700; margin: 0 0 12px; text-wrap: balance; letter-spacing: -0.01em; }
+  .lede { font-size: 15.5px; color: var(--ink-soft); max-width: 70ch; margin: 0 0 6px; }
+  .file-stat { font-size: 12.5px; color: var(--muted); font-family: var(--mono); }
+
+  h2 { font-size: 20px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
+  h2 .num { color: var(--accent); font-family: var(--mono); font-weight: 600; margin-right: 8px; font-size: 15px; }
+  h3.sub { font-size: 15.5px; font-weight: 700; margin: 26px 0 10px; }
+  .section-note { font-size: 13.5px; color: var(--muted); margin: 0 0 22px; max-width: 72ch; }
+  section { margin-top: 54px; }
+
+  /* ---- call graph ---- */
+  .callgraph {
+    display: flex; flex-direction: column; gap: 0;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: var(--surface); padding: 20px 24px;
+  }
+  .cg-row {
+    display: flex; align-items: baseline; gap: 12px;
+    padding: 9px 0; border-bottom: 1px dashed var(--line);
+  }
+  .cg-row:last-child { border-bottom: none; }
+  .cg-depth0 { font-weight: 700; }
+  .cg-depth1 { padding-left: 22px; color: var(--ink-soft); }
+  .cg-depth2 { padding-left: 44px; color: var(--muted); font-size: 13px; }
+  .cg-fn { font-family: var(--mono); color: var(--primary); font-weight: 600; white-space: nowrap; }
+  .cg-desc { font-size: 13px; color: var(--ink-soft); }
+  .cg-arrow { color: var(--line-strong); }
+
+  /* ---- generic node blocks reused from series ---- */
+  .node {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 20px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }
+  .node.primary-node { border-color: var(--primary); background: var(--primary-soft); }
+  .node.accent-node { border-color: var(--accent); background: var(--accent-soft); }
+  .node.blue-node { border-color: var(--blue); background: var(--blue-soft); }
+  .node h4 { margin: 0 0 8px; font-size: 14.5px; font-weight: 700; }
+  .node p { margin: 0; font-size: 13.5px; color: var(--ink-soft); }
+  .node .tag {
+    display: inline-block; font-size: 10.5px; font-family: var(--mono);
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px;
+    padding: 1px 6px; color: var(--ink-soft); margin-top: 8px;
+  }
+
+  /* ---- slot anatomy diagram ---- */
+  .slot-anatomy {
+    display: flex; flex-direction: column; gap: 8px;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: var(--surface); padding: 4px; overflow: hidden;
+  }
+  .slot-row { display: grid; grid-template-columns: 100px 1fr; gap: 0; }
+  .slot-row + .slot-row { border-top: 1px solid var(--line); }
+  .slot-tag {
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-weight: 700; font-size: 12.5px;
+    background: var(--surface-2); color: var(--primary); padding: 12px 8px;
+  }
+  .slot-body { padding: 11px 16px; font-size: 13px; color: var(--ink-soft); }
+  .slot-body .req { color: var(--accent); font-weight: 600; font-size: 11.5px; }
+  .slot-body .ex { display: block; margin-top: 3px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+  /* ---- prompt anatomy card (dissect _build_input output) ---- */
+  .prompt-anatomy { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--surface); }
+  .pa-part { display: grid; grid-template-columns: 190px 1fr; border-top: 1px solid var(--line); }
+  .pa-part:first-child { border-top: none; }
+  .pa-label { padding: 12px 14px; font-size: 12px; font-weight: 700; color: var(--ink); background: var(--surface-2); }
+  .pa-label .src { display: block; font-weight: 400; font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-top: 3px; }
+  .pa-content { padding: 12px 16px; font-size: 12.5px; color: var(--ink-soft); font-family: var(--mono); white-space: pre-wrap; }
+
+  /* ---- filter catalog table ---- */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; min-width: 680px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  thead th {
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
+    font-weight: 600; background: var(--surface-2);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td .k { font-family: var(--mono); font-weight: 600; white-space: nowrap; font-size: 12.5px; }
+  td .ex-inline { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+  /* ---- pipeline mini-flow for fallback tiers ---- */
+  .tiers { display: flex; flex-direction: column; gap: 0; }
+  .tier {
+    position: relative; padding: 16px 20px; border: 1px solid var(--line); background: var(--surface);
+  }
+  .tier:first-child { border-radius: 10px 10px 0 0; }
+  .tier:last-child { border-radius: 0 0 10px 10px; }
+  .tier:not(:first-child) { border-top: none; }
+  .tier .t-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .tier .t-badge {
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    background: var(--surface-2); border-radius: 5px; padding: 2px 8px; color: var(--ink-soft);
+  }
+  .tier .t-title { font-weight: 700; font-size: 14px; }
+  .tier .t-cond { font-size: 12px; color: var(--muted); margin-left: auto; font-family: var(--mono); }
+  .tier p { margin: 0; font-size: 13px; color: var(--ink-soft); }
+  .tier.penalty { border-left: 3px solid var(--red); }
+
+  /* score formula box */
+  .formula {
+    font-family: var(--mono); font-size: 13px; background: var(--surface-2);
+    border: 1px solid var(--line); border-radius: 8px; padding: 16px 20px;
+    color: var(--ink-soft); line-height: 1.9;
+  }
+  .formula .op { color: var(--accent); }
+
+  .callout {
+    margin-top: 20px; padding: 18px 22px; border: 1px solid var(--line);
+    border-left: 3px solid var(--accent); border-radius: 8px; background: var(--surface);
+  }
+  .callout h3 { margin: 0 0 8px; font-size: 15px; }
+  .callout p { margin: 0; font-size: 13.5px; color: var(--ink-soft); max-width: 68ch; }
+
+  footer.foot {
+    margin-top: 56px; font-size: 12px; color: var(--muted);
+    border-top: 1px solid var(--line); padding-top: 16px;
+  }
+
+  @media (max-width: 640px) {
+    .slot-row, .pa-part { grid-template-columns: 1fr; }
+    .slot-tag { justify-content: flex-start; padding: 8px 12px; }
+  }
+</style>
+
+<div class="page">
+
+  <header class="top">
+    <div class="eyebrow">653 시스템 · 시리즈 3/3</div>
+    <h1>ai_service.py — 프롬프트 조합부터 품질점수까지</h1>
+    <p class="lede">
+      이 파일 하나가 분야 판정, 프롬프트 조합, OpenAI 호출, 3단 폴백, 품질 채점을 전부 담당합니다.
+      함수 호출 순서와 그 안에 쌓여있는 필터 규칙들을 그대로 펼쳐봤습니다.
+    </p>
+    <div class="file-stat">backend/app/ai_service.py · 1,233줄 · 18개 분야 프롬프트 + 필터 규칙 40여 종</div>
+  </header>
+
+  <section style="margin-top:36px;">
+    <h2><span class="num">01</span>함수 호출 그래프</h2>
+    <p class="section-note">
+      <code>main.py</code>가 부르는 진입점은 <code>generate_653_subfield_line()</code> 하나뿐입니다.
+      그 안에서 아래 순서로 다른 함수들을 호출합니다.
+    </p>
+    <div class="callgraph">
+      <div class="cg-row cg-depth0"><span class="cg-fn">generate_653_subfield_line(meta)</span><span class="cg-desc">— 유일한 외부 진입점</span></div>
+      <div class="cg-row cg-depth1"><span class="cg-arrow">→</span><span class="cg-fn">_build_input()</span><span class="cg-desc">동적 프롬프트 텍스트 조합</span></div>
+      <div class="cg-row cg-depth2"><span class="cg-arrow">↳</span><span class="cg-fn">get_category_group()</span><span class="cg-desc">18개 그룹 중 하나 판정 (텍스트 + KDC 보정)</span></div>
+      <div class="cg-row cg-depth2"><span class="cg-arrow">↳</span><span class="cg-fn">get_category_prompt()</span><span class="cg-desc">CATEGORY_PROMPTS[group] 조회</span></div>
+      <div class="cg-row cg-depth2"><span class="cg-arrow">↳</span><span class="cg-fn">_build_few_shot_section()</span><span class="cg-desc">few_shots.json에서 같은 그룹 예시 최대 3개</span></div>
+      <div class="cg-row cg-depth2"><span class="cg-arrow">↳</span><span class="cg-fn">build_forbidden_set()</span><span class="cg-desc">(preprocess.py) 제목·저자 단어 금지어셋</span></div>
+      <div class="cg-row cg-depth1"><span class="cg-arrow">→</span><span class="cg-fn">_call_learned_agent_api()</span><span class="cg-desc">OpenAI Responses API 호출, 사용량 집계</span></div>
+      <div class="cg-row cg-depth1"><span class="cg-arrow">→</span><span class="cg-fn">parse_keyword_line()</span><span class="cg-desc">"$a키워드" 패턴으로 원시 목록 추출, 거절 응답 감지(_REFUSAL_RE)</span></div>
+      <div class="cg-row cg-depth1"><span class="cg-arrow">→</span><span class="cg-fn">finalize_653()</span><span class="cg-desc">필터링 + 3단 폴백 + 품질점수 산출</span></div>
+      <div class="cg-row cg-depth2"><span class="cg-arrow">↳</span><span class="cg-fn">validate_keyword() / _is_low_value_keyword()</span><span class="cg-desc">키워드 하나하나 검증</span></div>
+      <div class="cg-row cg-depth2"><span class="cg-arrow">↳</span><span class="cg-fn">_extract_backup_candidates()</span><span class="cg-desc">2단계 — 설명·목차 텍스트 토크나이즈</span></div>
+      <div class="cg-row cg-depth2"><span class="cg-arrow">↳</span><span class="cg-fn">_extract_category_candidates()</span><span class="cg-desc">3단계 — 분류 체인 하위분야명 (+ _GENRE_FALLBACKS)</span></div>
+      <div class="cg-row cg-depth0" style="margin-top:6px;"><span class="cg-fn">build_marc_653_line()</span><span class="cg-desc">— main.py에서 별도 호출, "$a…" → "=653  \\\\$a…" 최종 포맷</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">02</span>프롬프트는 3겹으로 쌓인다</h2>
+    <p class="section-note">
+      <code>_build_input()</code>이 매 요청마다 만드는 텍스트를 층별로 뜯어보면 이렇습니다. 실제 코드에 있는 순서 그대로입니다.
+    </p>
+    <div class="prompt-anatomy">
+      <div class="pa-part">
+        <div class="pa-label">1층 · 고정 지침<span class="src">_STATIC_INSTRUCTIONS<br>(instructions 파라미터, 매 호출 캐싱됨)</span></div>
+        <div class="pa-content">4대 원칙(독립성·구체성·목적성·시의성) + 핵심 규칙(내용어→주제어 치환, 제외 목록) — 18개 분야 전부 공통, 분야 프롬프트보다 상위 규칙</div>
+      </div>
+      <div class="pa-part">
+        <div class="pa-label">2층 · 분야별 지침<span class="src">CATEGORY_PROMPTS[group]</span></div>
+        <div class="pa-content">유형A-E 슬롯 정의 + 그 분야 전용 금지어. 아래 03번 섹션에서 구조를 자세히 다룹니다.</div>
+      </div>
+      <div class="pa-part">
+        <div class="pa-label">3층 · 참고 예시<span class="src">_build_few_shot_section()<br>few_shots.json</span></div>
+        <div class="pa-content">같은 그룹에서 사서가 실제로 확정한 good_keywords / bad_keywords 최대 3건 — 없으면 이 층은 생략</div>
+      </div>
+      <div class="pa-part">
+        <div class="pa-label">4층 · 도서 정보 + 작업 지시</div>
+        <div class="pa-content">분류·제목·저자·설명·목차·출판사책소개·제외어 목록, 그리고 "내부적으로 3단계를 거쳐 최종 결과만 출력" 지시(아래 04번 참고)</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">03</span>분야 프롬프트의 공통 해부도 — 유형A-E</h2>
+    <p class="section-note">
+      18개 분야 프롬프트 중 15개가 이 구조를 그대로 씁니다(에세이·인문학·기타는 슬롯 수가 다름). "역사" 분야 실제 정의를 예시로 폈습니다.
+    </p>
+    <div class="slot-anatomy">
+      <div class="slot-row">
+        <div class="slot-tag">유형A</div>
+        <div class="slot-body"><span class="req">1개 · 필수</span> — 분야명. 단독 상위분류어 금지, 반드시 수식어 결합<span class="ex">역사 예) 세계사 · 한국사 · 문명사 · 근현대사</span></div>
+      </div>
+      <div class="slot-row">
+        <div class="slot-tag">유형B</div>
+        <div class="slot-body">0-1개(분야에 따라 0-3개) — 이론·사상 또는 지역·문명 등 그 분야의 2차 축<span class="ex">역사 예) 미노아문명 · 히타이트제국 · 고대이집트</span></div>
+      </div>
+      <div class="slot-row">
+        <div class="slot-tag">유형C</div>
+        <div class="slot-body">0-1개, 설명·목차 근거 있을 때만 — 구체 사건·현상·개념<span class="ex">역사 예) 임진왜란 · 홀로코스트 · 산업혁명</span></div>
+      </div>
+      <div class="slot-row">
+        <div class="slot-tag">유형D</div>
+        <div class="slot-body">0-1개, 근거 있을 때만, 추정 금지 — 시대·인물·배경 세분화<span class="ex">역사 예) 고대사 · 조선시대 · 일제강점기</span></div>
+      </div>
+      <div class="slot-row">
+        <div class="slot-tag">유형E</div>
+        <div class="slot-body">0-1개, 근거 있을 때만 — 트렌드·현대적 해석<span class="ex">역사 예) 민족주의 · 역사왜곡 · 제국주의</span></div>
+      </div>
+    </div>
+    <p class="section-note" style="margin-top:14px;">
+      슬롯마다 "근거 없으면 비울 것 · 억지로 채우지 말 것"이 반복 명시되어 있습니다 — 슬롯을 다 채우려다 근거 없는 키워드를 지어내는 것을 막기 위한 장치입니다.
+      분야별 실제 슬롯 내용은 <code>docs/artifacts/653_category_routing_map.html</code>의 표에 18개 전체가 정리되어 있습니다.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="num">04</span>프롬프트에 내장된 "내부 3단계" 인지 지시</h2>
+    <p class="section-note">
+      한 번의 API 호출 안에서, 모델에게 스스로 3단계를 밟도록 지시합니다 — 완전히 분리된 다단계 호출은 아니지만, 같은 문제의식(주제 파악과 제약 준수를 한번에 시키면 후자를 잊는다)에 대한 가벼운 대응입니다.
+    </p>
+    <div class="tiers">
+      <div class="tier"><div class="t-head"><span class="t-badge">1단계</span><span class="t-title">핵심 주제 영역 파악</span></div><p>이 책의 핵심 주제 영역 2~3개를 먼저 식별</p></div>
+      <div class="tier"><div class="t-head"><span class="t-badge">2단계</span><span class="t-title">내용어 → 주제어 치환</span></div><p>각 영역에서 검색 키워드를 뽑되, "책에 등장하는 사물·사례(내용어)"인지 "책이 다루는 개념(주제어)"인지 판별해 내용어는 주제어로 치환</p></div>
+      <div class="tier"><div class="t-head"><span class="t-badge">3단계</span><span class="t-title">필터 규칙 적용</span></div><p>분야별 지침의 금지 규칙을 적용해 최종 목록 확정 — 이 단계의 실질적 집행은 모델이 아니라 05번의 후처리 코드가 다시 한번 담당</p></div>
+    </div>
+    <div class="callout">
+      <h3>왜 "가벼운" 대응인가</h3>
+      <p>진짜 다단계 아키텍처라면 후보 생성과 필터링을 서로 다른 API 호출로 분리해, 1차 호출은 제약 없이 풍부하게 뽑고 2차 호출이 사서 관점에서 엄격히 골라내는 방식일 것입니다. 지금은 한 호출 안에서 "단계를 밟으라"고 지시만 할 뿐이라 모델이 여전히 제약을 놓칠 수 있고, 그 부담을 05번의 정규식·차단어 후처리가 대신 떠안고 있습니다.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">05</span>필터 규칙 카탈로그</h2>
+    <p class="section-note">
+      <code>_is_low_value_keyword()</code>가 아래 규칙들을 순서대로 전부 통과해야 키워드 하나가 살아남습니다. 파일 상단에 정규식·집합 40여 종이 흩어져 있는데, 무엇을 막기 위한 것인지로 묶었습니다.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>막는 대상</th><th>구현</th><th>예시</th></tr></thead>
+        <tbody>
+          <tr><td>일반 저효용어 · 상위분류명</td><td class="k">LOW_VALUE_KEYWORDS<br>(120여개 집합)</td><td class="ex-inline">사회학 · 음악일반 · 경상계열 · Part · 내가</td></tr>
+          <tr><td>카테고리 fallback에서 새는 분류명</td><td class="k">CATEGORY_CANDIDATE_DENY</td><td class="ex-inline">과학 · 여행 · 전집 · 좋은부모 · 육아</td></tr>
+          <tr><td>단순 장르명 단독 사용</td><td class="k">_PURE_GENRE_LABELS</td><td class="ex-inline">에세이 · 소설 · 시집 (수식어 없이 단독일 때만)</td></tr>
+          <tr><td>국내+장르 조합(너무 넓음)</td><td class="k">_COUNTRY_GENRE_RE<br>_EXTENDED_COUNTRY_GENRE_RE</td><td class="ex-inline">한국문학 · 국내소설 — 단, 일본소설처럼 외국+장르는 허용</td></tr>
+          <tr><td>메타·평론성 접미 표현</td><td class="k">_LOW_VALUE_SUFFIX_RE</td><td class="ex-inline">~의미 · ~고찰 · ~성찰 · ~담론 · ~통찰</td></tr>
+          <tr><td>문학/에세이 단독 추상명사</td><td class="k">_LIT_ABSTRACT_NOUNS</td><td class="ex-inline">운명 · 그리움 · 위선 · 고독 (복합어는 통과)</td></tr>
+          <tr><td>에세이 감상형 수식어</td><td class="k">_ESSAY_SENTIMENT_RE</td><td class="ex-inline">따뜻한 · 잔잔한 · 힐링 · 아늑한</td></tr>
+          <tr><td>서사·비평 메타 표현</td><td class="k">_LITERATURE_META_RE</td><td class="ex-inline">감정서사 · 서사구조 · 문학적탐구</td></tr>
+          <tr><td>줄거리 파생 신조 복합어</td><td class="k">_LIT_DERIVED_COMPOUND_RE</td><td class="ex-inline">자아희생 · 생존본능 · 인간구원</td></tr>
+          <tr><td>소유격 연결 합성어</td><td class="k">_UI_CONNECTOR_RE</td><td class="ex-inline">삶의선택 · 존재의의미 (의학·의식 등은 보호)</td></tr>
+          <tr><td>자연과학 전용 메타표현</td><td class="k">NATURAL_SCIENCE_LOW_VALUE_KEYWORDS</td><td class="ex-inline">세계관 · 과학적논리</td></tr>
+          <tr><td>형식/판촉성 명사</td><td class="k">CONTENT_FORMAT_TOKENS<br>NATURAL_PHRASE_PREFIXES</td><td class="ex-inline">~팁 · ~비결 · ~모음 · 활기찬~</td></tr>
+          <tr><td>한자 혼재, 포맷 오류, 4자리 연도</td><td class="k">_is_low_value_keyword() 내 정규식</td><td class="ex-inline">커뮤니케이션技巧 · key키워드 · 2000년대이후</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">06</span>3단 계단식 폴백과 품질점수</h2>
+    <p class="section-note"><code>finalize_653()</code> — AI 결과가 부족할 때만 한 단계씩 아래로 내려가며, 내려갈수록 감점됩니다.</p>
+    <div class="tiers">
+      <div class="tier">
+        <div class="t-head"><span class="t-badge">기본</span><span class="t-title">필터링</span><span class="t-cond">항상 실행</span></div>
+        <p>AI가 낸 원시 키워드를 05번 카탈로그 규칙 + 제목/저자 금지어로 검증. 살아남은 것이 <code>valid_keywords</code></p>
+      </div>
+      <div class="tier penalty">
+        <div class="t-head"><span class="t-badge">2단계</span><span class="t-title">텍스트 fallback</span><span class="t-cond">valid_keywords == 0 (문학 그룹 제외)</span></div>
+        <p><code>_extract_backup_candidates()</code> — 설명·목차를 토크나이즈해 조사/어미 패턴을 걸러내고 보충. <code>backup_used</code> 플래그, <strong>-0.15점</strong></p>
+      </div>
+      <div class="tier penalty">
+        <div class="t-head"><span class="t-badge">3단계</span><span class="t-title">카테고리 fallback</span><span class="t-cond">여전히 min_keywords 미달</span></div>
+        <p><code>_extract_category_candidates()</code> — 분류 체인의 하위분야명, 그마저 없으면 <code>_GENRE_FALLBACKS</code>(장르별 대체어). <code>category_fallback_used</code> 플래그, <strong>-0.10점</strong> (실제로 키워드가 추가된 경우만)</p>
+      </div>
+    </div>
+    <h3 class="sub">품질점수 공식</h3>
+    <div class="formula">
+score = min(final_count, max_keywords) / max_keywords<br>
+<span class="op">if</span> filter_rate &gt; 0.3: score -= (filter_rate - 0.3) × 0.5<br>
+<span class="op">if</span> backup_used: score -= 0.15<br>
+<span class="op">if</span> category_fallback_used: score -= 0.10<br>
+score = clamp(score, 0.0, 1.0)
+    </div>
+    <p class="section-note" style="margin-top:14px;">
+      <code>filter_rate</code> = 차단된 키워드 수 / AI 원시 생성 수. 배치 스크립트는 이 점수가 0.55 미만이거나 최종 키워드가 4개 미만이면 "검토필요"로 분리합니다.
+    </p>
+  </section>
+
+  <footer class="foot">
+    2026-07-03 기준 · backend/app/ai_service.py 전문을 읽고 작성 · 분야 라우팅 세부는 653_category_routing_map.html, 전체 파이프라인은 653_system_architecture.html 참고
+  </footer>
+
+</div>

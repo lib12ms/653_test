@@ -1,0 +1,484 @@
+<title>653 분야 라우팅 구조</title>
+<style>
+  :root {
+    --bg: #eef1ed;
+    --surface: #ffffff;
+    --surface-2: #e4e8e2;
+    --ink: #1b2320;
+    --ink-soft: #45504a;
+    --muted: #6b756e;
+    --line: #c9cfc7;
+    --line-strong: #a6b0a6;
+    --primary: #2b4c3f;
+    --primary-soft: #dde8e2;
+    --accent: #a8631b;
+    --accent-soft: #f3e3d1;
+    --mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    --sans: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", -apple-system, BlinkMacSystemFont, sans-serif;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #141815;
+    --surface: #1c221e;
+    --surface-2: #232b25;
+    --ink: #e7eae5;
+    --ink-soft: #c3cbc3;
+    --muted: #93a099;
+    --line: #34403a;
+    --line-strong: #47564d;
+    --primary: #7db99b;
+    --primary-soft: #223a30;
+    --accent: #d99a4e;
+    --accent-soft: #3a2c18;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141815;
+      --surface: #1c221e;
+      --surface-2: #232b25;
+      --ink: #e7eae5;
+      --ink-soft: #c3cbc3;
+      --muted: #93a099;
+      --line: #34403a;
+      --line-strong: #47564d;
+      --primary: #7db99b;
+      --primary-soft: #223a30;
+      --accent: #d99a4e;
+      --accent-soft: #3a2c18;
+      color-scheme: dark;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.6;
+    padding: 48px 20px 96px;
+  }
+  .page {
+    max-width: 920px;
+    margin: 0 auto;
+  }
+
+  code, .mono { font-family: var(--mono); }
+
+  /* ---------- header ---------- */
+  header.top {
+    margin-bottom: 40px;
+  }
+  .eyebrow {
+    font-size: 12.5px;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    font-weight: 600;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0 0 12px;
+    text-wrap: balance;
+    letter-spacing: -0.01em;
+  }
+  .lede {
+    font-size: 15.5px;
+    color: var(--ink-soft);
+    max-width: 62ch;
+    margin: 0;
+  }
+
+  /* ---------- legend ---------- */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 22px;
+    margin: 28px 0 44px;
+    padding: 14px 18px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+  .legend-item { display: flex; align-items: center; gap: 8px; }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+  .swatch.primary { background: var(--primary); }
+  .swatch.accent { background: var(--accent); }
+  .swatch.dashed { background: none; border: 1.5px dashed var(--muted); }
+
+  /* ---------- flow ---------- */
+  .flow {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+  }
+  .stage {
+    position: relative;
+    padding: 28px 0;
+  }
+  .stage::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 0;
+    width: 2px;
+    height: 100%;
+    background: var(--line-strong);
+    transform: translateX(-50%);
+    z-index: 0;
+  }
+  .stage:first-child::before { top: 50%; height: 50%; }
+  .stage:last-child::before { height: 50%; }
+
+  .stage-label {
+    position: relative;
+    z-index: 1;
+    text-align: center;
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+    font-weight: 600;
+  }
+
+  .node-row {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .node {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px 20px;
+    max-width: 400px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }
+  .node.wide { max-width: 620px; }
+  .node.kdc { border-color: var(--accent); background: var(--accent-soft); }
+  .node.primary-node { border-color: var(--primary); background: var(--primary-soft); }
+  .node h3 {
+    margin: 0 0 8px;
+    font-size: 14.5px;
+    font-weight: 700;
+  }
+  .node p {
+    margin: 0;
+    font-size: 13.5px;
+    color: var(--ink-soft);
+  }
+  .node ol, .node ul {
+    margin: 8px 0 0;
+    padding-left: 20px;
+    font-size: 13.5px;
+    color: var(--ink-soft);
+  }
+  .node li { margin-bottom: 4px; }
+  .node li:last-child { margin-bottom: 0; }
+  .node .tag {
+    display: inline-block;
+    font-size: 10.5px;
+    font-family: var(--mono);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 1px 6px;
+    color: var(--ink-soft);
+    margin-top: 10px;
+  }
+
+  .decision {
+    display: flex;
+    justify-content: center;
+  }
+  .decision .node {
+    text-align: center;
+    border-style: dashed;
+    border-color: var(--line-strong);
+    background: var(--surface-2);
+  }
+
+  .branch {
+    display: flex;
+    justify-content: center;
+    gap: 28px;
+    flex-wrap: wrap;
+    margin-top: 18px;
+  }
+  .branch-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    flex: 1 1 260px;
+    max-width: 320px;
+  }
+  .branch-col .path-label {
+    font-size: 11.5px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  .new-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    background: var(--accent);
+    color: var(--surface);
+    border-radius: 4px;
+    padding: 2px 6px;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+
+  /* ---------- table section ---------- */
+  section.table-section {
+    margin-top: 64px;
+  }
+  h2 {
+    font-size: 19px;
+    font-weight: 700;
+    margin: 0 0 6px;
+  }
+  .section-note {
+    font-size: 13.5px;
+    color: var(--muted);
+    margin: 0 0 20px;
+    max-width: 68ch;
+  }
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 13.5px;
+    min-width: 720px;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  thead th {
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    font-weight: 600;
+    background: var(--surface-2);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.group-name { font-weight: 600; white-space: nowrap; }
+  td .example { font-family: var(--mono); font-size: 12.5px; color: var(--ink-soft); }
+  .note-pill {
+    display: inline-block;
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .note-pill.kdc { background: var(--accent-soft); color: var(--accent); }
+  .note-pill.new { background: var(--primary-soft); color: var(--primary); }
+
+  /* ---------- callout ---------- */
+  .callout {
+    margin-top: 40px;
+    padding: 20px 24px;
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+  .callout h3 {
+    margin: 0 0 8px;
+    font-size: 15px;
+  }
+  .callout p {
+    margin: 0;
+    font-size: 13.5px;
+    color: var(--ink-soft);
+    max-width: 66ch;
+  }
+
+  footer.foot {
+    margin-top: 56px;
+    font-size: 12px;
+    color: var(--muted);
+    border-top: 1px solid var(--line);
+    padding-top: 16px;
+  }
+
+  @media (max-width: 640px) {
+    body { padding: 32px 14px 72px; }
+    h1 { font-size: 23px; }
+    .branch { gap: 16px; }
+  }
+</style>
+
+<div class="page">
+
+  <header class="top">
+    <div class="eyebrow">653 자유주제어 생성 시스템 — 내부 구조</div>
+    <h1>ISBN 한 권이 18개 분야 프롬프트 중 하나로 정해지기까지</h1>
+    <p class="lede">
+      <code>app/ai_service.py</code>의 <code>get_category_group()</code>이 실제로 어떤 순서로 판단하는지 도식화했습니다.
+      알라딘 카테고리 문자열이 1차 신호이고, ISBN 부가기호(KDC 3자리)는 "기타"·"인문학" 캐치올로 떨어졌을 때만 개입하는 2차 보정 신호입니다.
+    </p>
+  </header>
+
+  <div class="legend">
+    <div class="legend-item"><span class="swatch primary"></span> 1차 경로 — 알라딘 카테고리 텍스트</div>
+    <div class="legend-item"><span class="swatch accent"></span> 2차 경로 — ISBN 부가기호(KDC) 보정</div>
+    <div class="legend-item"><span class="swatch dashed"></span> 분기 판단 지점</div>
+    <div class="legend-item"><span class="new-badge">신규</span> 2026-07-03 세션에서 추가·변경</div>
+  </div>
+
+  <div class="flow">
+
+    <div class="stage">
+      <div class="stage-label">입력</div>
+      <div class="node-row">
+        <div class="node wide">
+          <h3>ISBN</h3>
+          <p>알라딘 ItemLookUp으로 카테고리·제목·설명·목차를 가져오는 동시에, Seoji API로 부가기호를 병렬 조회합니다.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-label">신호 수집</div>
+      <div class="node-row">
+        <div class="node primary-node">
+          <h3>알라딘 카테고리 문자열</h3>
+          <p>예: <span class="mono">"여행 &gt; 일본여행 &gt; 일본여행 가이드북"</span></p>
+          <span class="tag">fetch_aladin_for_653()</span>
+        </div>
+        <div class="node kdc">
+          <h3>부가기호 → content_code</h3>
+          <p>Seoji <span class="mono">EA_ADD_CODE</span> 마지막 3자리(KDC 강목 상당). <span class="mono">NLK_ENABLE</span> 켜져 있을 때만 채워짐.</p>
+          <span class="tag">fetch_kdc_content_code_by_isbn()</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-label">1차 판정 — 텍스트 기반</div>
+      <div class="node-row">
+        <div class="node wide primary-node">
+          <h3>_category_group_from_text(category)</h3>
+          <ol>
+            <li>특수 규칙 5개를 순서대로 확인 — 예) "인문학"+"철학" → 철학, "사회과학"+"교육학" → 교육, "예술"+"건축" → 생활실용</li>
+            <li>없으면 <span class="mono">CATEGORY_MAP</span> 18개 키워드와 카테고리 문자열을 부분일치 비교</li>
+            <li>그래도 없으면 <strong>"기타"</strong>로 확정</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-label">분기</div>
+      <div class="decision">
+        <div class="node">
+          <h3>판정 결과가 "기타" 또는 "인문학"인가?</h3>
+          <p>둘 다 실질적으로 캐치올 — 알라딘 카테고리만으로는 구체 분야를 못 찾은 경우</p>
+        </div>
+      </div>
+      <div class="branch">
+        <div class="branch-col">
+          <div class="path-label">아니오 — 이미 구체 분야</div>
+          <div class="node" style="max-width:100%;">
+            <p>문학·역사·철학·심리학·사회정치·경제경영·자연과학·IT컴퓨터·예술·교육·외국어·에세이·자기계발·종교/역학·생활실용·여행 <strong>그대로 확정</strong></p>
+          </div>
+        </div>
+        <div class="branch-col">
+          <div class="path-label">예 — content_code 있으면 2차 보정</div>
+          <div class="node kdc" style="max-width:100%;">
+            <p><span class="mono">kdc_content_code_to_group()</span> — 3자리 코드를 KDC 100구분 공식표 기반 21개 구간(814→에세이, 980-989→여행 등)과 비교. 매치되면 override, 없으면 원래대로 "기타" 유지.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="stage-label">최종</div>
+      <div class="node-row">
+        <div class="node wide">
+          <h3>category_group 확정 → 유형A-E 프롬프트 선택</h3>
+          <p><span class="mono">CATEGORY_PROMPTS[group]</span>로 AI 호출 → 후처리 필터(LOW_VALUE·차단어) → 653 필드</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <section class="table-section">
+    <h2>18개 그룹은 실제로 어떻게 채워지는가</h2>
+    <p class="section-note">
+      대부분은 알라딘 카테고리 키워드 하나로 바로 결정됩니다. "인문학"과 "기타"만 그 자체가 캐치올이라 부가기호 보정의 실질적인 대상이 됩니다.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>그룹</th>
+            <th>도달 경로</th>
+            <th>예시 카테고리 문자열</th>
+            <th>비고</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="group-name">문학</td><td>CATEGORY_MAP: 소설·시·희곡·장르소설</td><td class="example">소설/시/희곡 &gt; 한국소설</td><td></td></tr>
+          <tr><td class="group-name">에세이</td><td>CATEGORY_MAP: 에세이</td><td class="example">에세이 &gt; 여행에세이</td><td></td></tr>
+          <tr><td class="group-name">철학</td><td>특수규칙: 인문학 + 철학</td><td class="example">인문학 &gt; 철학 &gt; 서양철학</td><td></td></tr>
+          <tr><td class="group-name">심리학</td><td>특수규칙: 인문학 + 심리학/정신분석</td><td class="example">인문학 &gt; 심리학</td><td></td></tr>
+          <tr><td class="group-name">역사</td><td>CATEGORY_MAP: 역사</td><td class="example">역사 &gt; 한국사</td><td></td></tr>
+          <tr><td class="group-name">인문학</td><td>CATEGORY_MAP: 인문학 (철학·심리학 특수규칙에 안 걸린 나머지)</td><td class="example">인문학 &gt; 교양 인문학</td><td><span class="note-pill kdc">부가기호 보정 대상</span></td></tr>
+          <tr><td class="group-name">종교/역학</td><td>CATEGORY_MAP: 종교·역학</td><td class="example">종교 &gt; 불교</td><td></td></tr>
+          <tr><td class="group-name">사회정치</td><td>CATEGORY_MAP: 사회과학</td><td class="example">사회과학 &gt; 사회학</td><td></td></tr>
+          <tr><td class="group-name">경제경영</td><td>특수규칙(우선) + CATEGORY_MAP</td><td class="example">경제경영 &gt; 마케팅</td><td></td></tr>
+          <tr><td class="group-name">자기계발</td><td>CATEGORY_MAP: 자기계발</td><td class="example">자기계발 &gt; 성공/처세</td><td></td></tr>
+          <tr><td class="group-name">자연과학</td><td>CATEGORY_MAP: 과학</td><td class="example">과학 &gt; 물리학</td><td></td></tr>
+          <tr><td class="group-name">IT컴퓨터</td><td>CATEGORY_MAP: 컴퓨터·모바일</td><td class="example">컴퓨터/모바일 &gt; 프로그래밍언어</td><td></td></tr>
+          <tr><td class="group-name">생활실용</td><td>CATEGORY_MAP: 건강·취미·요리·살림 + 특수규칙(예술&gt;건축)</td><td class="example">건강 &gt; 운동/피트니스</td><td></td></tr>
+          <tr><td class="group-name">예술</td><td>CATEGORY_MAP: 예술·대중문화</td><td class="example">예술 &gt; 미술</td><td></td></tr>
+          <tr><td class="group-name">교육</td><td>CATEGORY_MAP: 대학교재·좋은부모 + 특수규칙(사회과학&gt;교육학)</td><td class="example">좋은부모 &gt; 육아법/육아 일반</td><td><span class="note-pill new">신규 확장</span></td></tr>
+          <tr><td class="group-name">외국어</td><td>CATEGORY_MAP: 외국어</td><td class="example">외국어 &gt; 영어회화</td><td></td></tr>
+          <tr><td class="group-name">여행</td><td>CATEGORY_MAP: 여행</td><td class="example">여행 &gt; 일본여행 &gt; 가이드북</td><td><span class="note-pill new">신규 그룹</span></td></tr>
+          <tr><td class="group-name">기타</td><td>CATEGORY_MAP: 전집 + 매칭 실패 전체(예: "청소년")</td><td class="example">전집/중고전집 &gt; 초등 1-3학년</td><td><span class="note-pill kdc">부가기호 보정 대상</span> <span class="note-pill new">재구조화</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="callout">
+    <h3>다음으로 살펴볼 지점</h3>
+    <p>
+      지금 부가기호는 "기타"·"인문학"으로 떨어졌을 때만 개입합니다. 하지만 이미 구체 그룹이 정해진 책에서도
+      <span class="mono">_category_group_from_text()</span> 결과와 <span class="mono">kdc_content_code_to_group()</span> 결과가
+      서로 다르게 나오는 경우가 있을 수 있습니다(예: 종교로 분류됐지만 부가기호는 예술을 가리키는 "불교미술사").
+      이 불일치가 실제로 얼마나 자주, 어떤 조합으로 발생하는지부터 측정해보는 것이 다음 단계입니다.
+    </p>
+  </div>
+
+  <footer class="foot">
+    2026-07-03 기준 · app/ai_service.py의 get_category_group() / kdc_content_code_to_group() 실제 로직을 기준으로 작성
+  </footer>
+
+</div>

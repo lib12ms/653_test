@@ -1,0 +1,504 @@
+<title>I2M 653 시스템 전체 구조</title>
+<style>
+  :root {
+    --bg: #eef1ed;
+    --surface: #ffffff;
+    --surface-2: #e4e8e2;
+    --ink: #1b2320;
+    --ink-soft: #45504a;
+    --muted: #6b756e;
+    --line: #c9cfc7;
+    --line-strong: #a6b0a6;
+    --primary: #2b4c3f;
+    --primary-soft: #dde8e2;
+    --accent: #a8631b;
+    --accent-soft: #f3e3d1;
+    --blue: #3a5f8a;
+    --blue-soft: #dde6f0;
+    --mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    --sans: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", -apple-system, BlinkMacSystemFont, sans-serif;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #141815;
+    --surface: #1c221e;
+    --surface-2: #232b25;
+    --ink: #e7eae5;
+    --ink-soft: #c3cbc3;
+    --muted: #93a099;
+    --line: #34403a;
+    --line-strong: #47564d;
+    --primary: #7db99b;
+    --primary-soft: #223a30;
+    --accent: #d99a4e;
+    --accent-soft: #3a2c18;
+    --blue: #8fb2da;
+    --blue-soft: #23324a;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141815;
+      --surface: #1c221e;
+      --surface-2: #232b25;
+      --ink: #e7eae5;
+      --ink-soft: #c3cbc3;
+      --muted: #93a099;
+      --line: #34403a;
+      --line-strong: #47564d;
+      --primary: #7db99b;
+      --primary-soft: #223a30;
+      --accent: #d99a4e;
+      --accent-soft: #3a2c18;
+      --blue: #8fb2da;
+      --blue-soft: #23324a;
+      color-scheme: dark;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.6;
+    padding: 48px 20px 96px;
+  }
+  .page { max-width: 980px; margin: 0 auto; }
+  code, .mono { font-family: var(--mono); }
+
+  /* ---------- header ---------- */
+  header.top { margin-bottom: 36px; }
+  .eyebrow {
+    font-size: 12.5px; letter-spacing: 0.08em; color: var(--accent);
+    font-weight: 600; text-transform: uppercase; margin-bottom: 10px;
+  }
+  h1 { font-size: 28px; font-weight: 700; margin: 0 0 12px; text-wrap: balance; letter-spacing: -0.01em; }
+  .lede { font-size: 15.5px; color: var(--ink-soft); max-width: 68ch; margin: 0; }
+
+  /* ---------- overview cards ---------- */
+  .overview {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin: 28px 0 48px;
+  }
+  .ov-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .ov-card .k { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
+  .ov-card .v { font-size: 14.5px; color: var(--ink); font-weight: 600; margin-bottom: 4px; }
+  .ov-card .d { font-size: 12.5px; color: var(--ink-soft); }
+
+  h2 { font-size: 20px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
+  h2 .num { color: var(--accent); font-family: var(--mono); font-weight: 600; margin-right: 8px; font-size: 15px; }
+  .section-note { font-size: 13.5px; color: var(--muted); margin: 0 0 22px; max-width: 70ch; }
+  section { margin-top: 56px; }
+
+  /* ---------- legend ---------- */
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 10px 22px;
+    margin: 0 0 28px; padding: 14px 18px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+    font-size: 13px; color: var(--ink-soft);
+  }
+  .legend-item { display: flex; align-items: center; gap: 8px; }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+  .swatch.primary { background: var(--primary); }
+  .swatch.accent { background: var(--accent); }
+  .swatch.blue { background: var(--blue); }
+  .swatch.dashed { background: none; border: 1.5px dashed var(--muted); }
+
+  /* ---------- flow ---------- */
+  .flow { position: relative; display: flex; flex-direction: column; }
+  .stage { position: relative; padding: 24px 0; }
+  .stage::before {
+    content: ""; position: absolute; left: 50%; top: 0; width: 2px; height: 100%;
+    background: var(--line-strong); transform: translateX(-50%); z-index: 0;
+  }
+  .stage:first-child::before { top: 50%; height: 50%; }
+  .stage:last-child::before { height: 50%; }
+  .stage-label {
+    position: relative; z-index: 1; text-align: center; font-size: 11.5px;
+    letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+    margin-bottom: 14px; font-weight: 600;
+  }
+  .node-row { position: relative; z-index: 1; display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; }
+  .node {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 18px; max-width: 300px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }
+  .node.wide { max-width: 640px; }
+  .node.primary-node { border-color: var(--primary); background: var(--primary-soft); }
+  .node.accent-node { border-color: var(--accent); background: var(--accent-soft); }
+  .node.blue-node { border-color: var(--blue); background: var(--blue-soft); }
+  .node h3 { margin: 0 0 6px; font-size: 14px; font-weight: 700; }
+  .node p { margin: 0; font-size: 13px; color: var(--ink-soft); }
+  .node ol, .node ul { margin: 8px 0 0; padding-left: 20px; font-size: 13px; color: var(--ink-soft); }
+  .node li { margin-bottom: 4px; }
+  .node .tag {
+    display: inline-block; font-size: 10.5px; font-family: var(--mono);
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px;
+    padding: 1px 6px; color: var(--ink-soft); margin-top: 8px;
+  }
+  .fan { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; margin-top: 14px; }
+  .fan-note { text-align: center; font-size: 12px; color: var(--muted); margin-top: 10px; }
+
+  /* ---------- module map ---------- */
+  .modmap { display: flex; flex-direction: column; gap: 10px; }
+  .mod-row {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 4px 18px;
+    padding: 13px 16px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    align-items: start;
+  }
+  .mod-row .file { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--primary); }
+  .mod-row .role { font-size: 13.5px; color: var(--ink-soft); }
+  .mod-row .fns { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .mod-row .fns code { color: var(--ink-soft); }
+  .layer-tag {
+    display: inline-block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
+    padding: 1px 7px; border-radius: 999px; margin-bottom: 6px; font-weight: 600;
+  }
+  .layer-tag.collect { background: var(--blue-soft); color: var(--blue); }
+  .layer-tag.process { background: var(--primary-soft); color: var(--primary); }
+  .layer-tag.deliver { background: var(--accent-soft); color: var(--accent); }
+  .layer-tag.support { background: var(--surface-2); color: var(--muted); }
+
+  /* ---------- principle cards ---------- */
+  .principles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .p-card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px;
+  }
+  .p-card .p-num { font-family: var(--mono); font-size: 12px; color: var(--accent); font-weight: 700; }
+  .p-card h4 { margin: 4px 0 8px; font-size: 15px; }
+  .p-card p { margin: 0; font-size: 12.5px; color: var(--ink-soft); }
+  .p-card .ex { margin-top: 8px; font-size: 11.5px; font-family: var(--mono); color: var(--muted); }
+
+  /* ---------- table ---------- */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; min-width: 640px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  thead th {
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
+    font-weight: 600; background: var(--surface-2);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td .k { font-family: var(--mono); font-weight: 600; white-space: nowrap; }
+
+  .callout {
+    margin-top: 20px; padding: 18px 22px; border: 1px solid var(--line);
+    border-left: 3px solid var(--accent); border-radius: 8px; background: var(--surface);
+  }
+  .callout h3 { margin: 0 0 8px; font-size: 15px; }
+  .callout p { margin: 0; font-size: 13.5px; color: var(--ink-soft); max-width: 68ch; }
+
+  footer.foot {
+    margin-top: 56px; font-size: 12px; color: var(--muted);
+    border-top: 1px solid var(--line); padding-top: 16px;
+  }
+
+  @media (max-width: 760px) {
+    .overview { grid-template-columns: 1fr; }
+    .principles { grid-template-columns: repeat(2, 1fr); }
+    .mod-row { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    body { padding: 32px 14px 72px; }
+    h1 { font-size: 22px; }
+    .principles { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="page">
+
+  <header class="top">
+    <div class="eyebrow">I2M 자동목록 서비스 — 653 자유주제어 생성</div>
+    <h1>ISBN 한 권이 도서관 MARC 653 필드로 바뀌기까지, 코드 전체 구조</h1>
+    <p class="lede">
+      알라딘·KPIPA·국립중앙도서관(Seoji) 세 출처에서 메타데이터를 모아 OpenAI로 주제어를 뽑고,
+      사서 검수 기준에 맞게 걸러내는 파이프라인입니다. 팀 공유용으로 백엔드 전 모듈의 역할과
+      데이터 흐름을 정리했습니다.
+    </p>
+  </header>
+
+  <div class="overview">
+    <div class="ov-card">
+      <div class="k">입력 / 출력</div>
+      <div class="v">ISBN → MARC 653 필드</div>
+      <div class="d">=653  \\$a키워드1$a키워드2… 형식, 최대 7개</div>
+    </div>
+    <div class="ov-card">
+      <div class="k">핵심 엔진</div>
+      <div class="v">OpenAI Responses API</div>
+      <div class="d">고정 지침(4대 원칙) + 분야별 동적 유형A-E 프롬프트</div>
+    </div>
+    <div class="ov-card">
+      <div class="k">사람이 들어가는 지점</div>
+      <div class="v">사서 검수 · 골든데이터</div>
+      <div class="d">Streamlit UI에서 키워드 수정 → Google Sheets 축적</div>
+    </div>
+  </div>
+
+  <section>
+    <h2><span class="num">01</span>전체 요청 흐름</h2>
+    <p class="section-note">
+      <code>/api/field653</code> 한 번의 호출 안에서 벌어지는 일입니다. 파란 계열은 외부 API 병렬 조회,
+      초록 계열은 알라딘 중심의 주 경로, 주황 계열은 후처리·검증 단계입니다.
+    </p>
+
+    <div class="legend">
+      <div class="legend-item"><span class="swatch primary"></span> 주 경로 — 알라딘 메타 · 분류 · 프롬프트</div>
+      <div class="legend-item"><span class="swatch blue"></span> 보조 출처 — KPIPA · Seoji(선택적, 플래그로 on/off)</div>
+      <div class="legend-item"><span class="swatch accent"></span> 후처리 · 품질 검증</div>
+    </div>
+
+    <div class="flow">
+
+      <div class="stage">
+        <div class="stage-label">진입점</div>
+        <div class="node-row">
+          <div class="node wide">
+            <h3>Streamlit UI / batch_653.py / 외부 클라이언트</h3>
+            <p>단건 조회, 96권 단위 배치, 또는 다른 서비스가 직접 <span class="mono">POST /api/field653</span> 호출</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <div class="stage-label">1 · 메타데이터 병렬 수집</div>
+        <div class="fan">
+          <div class="node primary-node">
+            <h3>알라딘 (필수)</h3>
+            <p>ItemLookUp API로 분류·제목·저자·설명·목차. 출판사 책소개는 API에 없어 상세페이지를 직접 크롤링해 보완.</p>
+            <span class="tag">aladin_client.fetch_aladin_for_653()</span>
+          </div>
+          <div class="node blue-node">
+            <h3>KPIPA (선택)</h3>
+            <p>ONIX 목차(TextType 04)만 사용. <span class="mono">kpipa_enable</span> 꺼져 있으면 즉시 빈 값.</p>
+            <span class="tag">kpipa_client.fetch_secondary_metadata_hint()</span>
+          </div>
+          <div class="node blue-node">
+            <h3>Seoji 부가기호 (선택)</h3>
+            <p>ISBN 부가기호(EA_ADD_CODE) 마지막 3자리 = 내용분류코드. <span class="mono">nlk_enable</span> 꺼져 있으면 즉시 빈 값.</p>
+            <span class="tag">nlk_client.fetch_kdc_content_code_by_isbn()</span>
+          </div>
+        </div>
+        <p class="fan-note">세 호출은 <span class="mono">asyncio.gather</span>로 동시에 실행 — 순차 호출 대비 지연시간 절감</p>
+      </div>
+
+      <div class="stage">
+        <div class="stage-label">2 · 병합 + 전처리</div>
+        <div class="node-row">
+          <div class="node wide primary-node">
+            <h3>metadata_merge.merge_aladin_with_nlk()</h3>
+            <p>알라딘을 기준으로 KPIPA 목차 보강, 부가기호 content_code 부착. 동시에 <span class="mono">preprocess.py</span>가 카테고리 유통어 제거, 설명에서 저자 이력 문장 제거, 목차를 장 단위로 압축.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <div class="stage-label">3 · 분야 라우팅</div>
+        <div class="node-row">
+          <div class="node wide primary-node">
+            <h3>ai_service.get_category_group()</h3>
+            <p>알라딘 카테고리 텍스트로 18개 그룹 중 하나 결정 → "기타"·"인문학" 캐치올일 때만 부가기호로 보정. (세부 로직은 별도 <em>분야 라우팅 다이어그램</em> 참고)</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <div class="stage-label">4 · AI 생성</div>
+        <div class="node-row">
+          <div class="node wide">
+            <h3>_build_input() → OpenAI Responses API</h3>
+            <ol>
+              <li>고정 <span class="mono">_STATIC_INSTRUCTIONS</span> — 4대 원칙(독립성·구체성·목적성·시의성), 모든 분야 공통</li>
+              <li>분야별 동적 지침 — <span class="mono">CATEGORY_PROMPTS[group]</span>의 유형A-E 슬롯</li>
+              <li>참고 예시 — <span class="mono">few_shots.json</span>에서 같은 그룹 사서 작성 사례 최대 3개</li>
+              <li>도서 정보 — 분류·제목·저자·설명·목차·출판사 책소개</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <div class="stage-label">5 · 후처리 · 품질 검증</div>
+        <div class="node-row">
+          <div class="node wide accent-node">
+            <h3>finalize_653() — 3단 계단식 보강</h3>
+            <ol>
+              <li><strong>필터링</strong> — 제목·저자 단어 금지, 저효용어·상위분류명·감상어 등 다수 규칙으로 차단</li>
+              <li><strong>텍스트 fallback</strong> — 유효 키워드 0개일 때만, 설명·목차에서 명사 추출(문학 그룹은 제외)</li>
+              <li><strong>카테고리 fallback</strong> — 그래도 <span class="mono">min_keywords</span> 미달이면 분류 체인의 구체 하위분야명 사용</li>
+            </ol>
+            <p style="margin-top:8px">결과로 <span class="mono">Field653Quality</span>(품질점수·경고플래그) 산출 — fallback을 썼다는 사실 자체가 감점 요인</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <div class="stage-label">출력</div>
+        <div class="node-row">
+          <div class="node wide">
+            <h3>build_marc_653_line()</h3>
+            <p><span class="mono">=653  \\$a키워드1$a키워드2…</span> · 응답에 원본 알라딘 메타, 품질 지표, 부가기호 출처까지 함께 반환</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">02</span>모듈 맵 — 파일별 책임</h2>
+    <p class="section-note"><code>backend/app/</code> 기준. 위 흐름의 어느 단계에 해당하는지 태그로 표시했습니다.</p>
+    <div class="modmap">
+
+      <div class="mod-row">
+        <div><span class="layer-tag collect">수집</span><div class="file">aladin_client.py</div></div>
+        <div><div class="role">알라딘 ItemLookUp 호출 + getContents.aspx 상세페이지 직접 크롤링(책소개·목차·출판사책소개)</div>
+        <div class="fns"><code>fetch_aladin_for_653()</code> · <code>_crawl_aladin_detail()</code></div></div>
+      </div>
+
+      <div class="mod-row">
+        <div><span class="layer-tag collect">수집</span><div class="file">kpipa_client.py</div></div>
+        <div><div class="role">KPIPA getBookDetail — ONIX 목차(TextType 04)만 사용, 앱 본선에서는 목차 보강 전용</div>
+        <div class="fns"><code>fetch_kpipa_hint_by_isbn()</code> · <code>fetch_secondary_metadata_hint()</code></div></div>
+      </div>
+
+      <div class="mod-row">
+        <div><span class="layer-tag collect">수집</span><div class="file">nlk_client.py / nlk_metadata.py</div></div>
+        <div><div class="role">국립중앙도서관 Seoji API — ISBN 부가기호(EA_ADD_CODE) 조회 및 파싱. KDC 필드는 실제로 대부분 비어있어 부가기호를 대신 사용</div>
+        <div class="fns"><code>fetch_kdc_content_code_by_isbn()</code> · <code>hint_from_seoji_doc()</code> · <code>content_code_from_hint()</code></div></div>
+      </div>
+
+      <div class="mod-row">
+        <div><span class="layer-tag collect">수집</span><div class="file">fetcher_http.py</div></div>
+        <div><div class="role">공용 HTTP — 429/5xx 지수백오프 재시도(tenacity), 제한적 SSL 검증 폴백, HTML 태그 제거</div>
+        <div class="fns"><code>get_json()</code> · <code>get_text()</code> · <code>safe_fetch_page_text()</code></div></div>
+      </div>
+
+      <div class="mod-row">
+        <div><span class="layer-tag process">처리</span><div class="file">metadata_merge.py</div></div>
+        <div><div class="role">알라딘을 주 정보원으로 KPIPA 목차·부가기호 content_code를 하나의 메타 객체로 병합</div>
+        <div class="fns"><code>merge_aladin_with_nlk()</code></div></div>
+      </div>
+
+      <div class="mod-row">
+        <div><span class="layer-tag process">처리</span><div class="file">preprocess.py</div></div>
+        <div><div class="role">카테고리 유통어 제거, 설명에서 저자 이력 문장 제거, 목차 장 단위 압축, 제목/저자 기반 금지어셋 구성, 키워드 최종 검증 규칙</div>
+        <div class="fns"><code>clean_category_for_ai()</code> · <code>clean_description_for_ai()</code> · <code>build_forbidden_set()</code> · <code>should_keep_keyword()</code></div></div>
+      </div>
+
+      <div class="mod-row">
+        <div><span class="layer-tag process">처리</span><div class="file">ai_service.py</div></div>
+        <div><div class="role">시스템의 핵심 — 분야 라우팅(18개 그룹 + KDC 보정), 분야별 유형A-E 프롬프트, OpenAI 호출, 3단 fallback, 품질점수 산출</div>
+        <div class="fns"><code>get_category_group()</code> · <code>_build_input()</code> · <code>generate_653_subfield_line()</code> · <code>finalize_653()</code></div></div>
+      </div>
+
+      <div class="mod-row">
+        <div><span class="layer-tag deliver">전달</span><div class="file">main.py</div></div>
+        <div><div class="role">FastAPI 엔트리 — 3개 출처 병렬 조회 오케스트레이션, ISBN 결과 TTL 캐시, 엔드포인트 정의</div>
+        <div class="fns"><code>POST /api/field653</code> · <code>POST /api/field653/preview</code> · <code>POST /api/save-golden</code></div></div>
+      </div>
+
+      <div class="mod-row">
+        <div><span class="layer-tag deliver">전달</span><div class="file">sheets_service.py</div></div>
+        <div><div class="role">사서가 Streamlit에서 확정한 골든 키워드를 Google Sheets에 적재 — 향후 few-shot·프롬프트 개선 자산</div>
+        <div class="fns"><code>save_golden_data()</code></div></div>
+      </div>
+
+      <div class="mod-row">
+        <div><span class="layer-tag support">기반</span><div class="file">models.py / config.py</div></div>
+        <div><div class="role">Pydantic 스키마(AladinMetadata653 · NlkMetadataHint · Field653Response)와 .env 기반 설정(API 키 · enable 플래그 · 임계값)</div>
+        <div class="fns"><code>AladinMetadata653</code> · <code>Settings</code></div></div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">03</span>모든 분야가 공유하는 품질 4대 원칙</h2>
+    <p class="section-note">
+      분야별 유형A-E 프롬프트 위에, <code>_STATIC_INSTRUCTIONS</code>로 모든 호출에 고정 전송되는 상위 규칙입니다.
+    </p>
+    <div class="principles">
+      <div class="p-card">
+        <div class="p-num">01</div>
+        <h4>독립성</h4>
+        <p>제목·저자에 쓰인 단어를 그대로 반복하지 않는다. 하위개념으로 치환은 허용.</p>
+      </div>
+      <div class="p-card">
+        <div class="p-num">02</div>
+        <h4>구체성</h4>
+        <p>과학·인문학 같은 상위분류명 단독 출력 금지. 반드시 구체 하위개념으로.</p>
+        <div class="ex">자연과학 → 양자역학</div>
+      </div>
+      <div class="p-card">
+        <div class="p-num">03</div>
+        <h4>목적성</h4>
+        <p>이용자가 검색창에 실제로 입력할 명사만. 감상어 금지, 판촉어는 검색 효용이 있으면 허용.</p>
+        <div class="ex">위로 → 번아웃</div>
+      </div>
+      <div class="p-card">
+        <div class="p-num">04</div>
+        <h4>시의성</h4>
+        <p>신조어·트렌드어는 적극 허용한다.</p>
+        <div class="ex">LLM · N잡러 · 챗GPT</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">04</span>사람이 다시 들어오는 피드백 루프</h2>
+    <p class="section-note">AI 출력이 최종이 아닙니다 — 사서 검수와 배치 테스트 결과가 다음 개선 사이클의 재료가 됩니다.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>단계</th><th>도구</th><th>산출물</th></tr></thead>
+        <tbody>
+          <tr><td class="k">단건 검수</td><td>streamlit_app/app.py</td><td>사서가 키워드를 직접 수정 후 확정 — 크롤링 보완 여부·KPIPA 병합 여부 배지로 표시</td></tr>
+          <tr><td class="k">골든데이터 적재</td><td>sheets_service.py → Google Sheets</td><td>ISBN·AI 결과·사서 확정 결과·수정 여부를 한 행으로 누적 저장</td></tr>
+          <tr><td class="k">대량 회귀 테스트</td><td>batch_653.py</td><td>CSV 입력 → 전체 파이프라인 반복 → 품질점수 기준 검토대기 CSV 자동 분리</td></tr>
+          <tr><td class="k">참고 예시 갱신</td><td>few_shots.json</td><td>골든데이터에서 좋은/나쁜 사례를 뽑아 분야별 프롬프트에 예시로 재투입</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">05</span>기능 on/off 플래그</h2>
+    <p class="section-note">외부 API 호출 여부를 결정하는 설정값 — <code>config.py</code> / <code>.env</code>.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>플래그</th><th>기본값</th><th>켜지면</th></tr></thead>
+        <tbody>
+          <tr><td class="k">kpipa_enable</td><td>False</td><td>KPIPA에서 ONIX 목차를 가져와 알라딘 목차에 덧붙임</td></tr>
+          <tr><td class="k">nlk_enable</td><td>False (현재 배포는 True)</td><td>Seoji에서 부가기호를 조회해 "기타"·"인문학" 캐치올 분야를 보정</td></tr>
+          <tr><td class="k">allow_insecure_ssl_fallback</td><td>False</td><td>지정 호스트에 한해 SSL 인증 실패 시 verify=False로 재시도</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout">
+      <h3>분야 라우팅 세부 로직</h3>
+      <p>
+        3단계(분야 라우팅)의 18개 그룹 판정 순서와 KDC 보정 조건은 별도 다이어그램에 자세히 정리되어 있습니다 —
+        이 문서는 라우팅을 포함한 전체 파이프라인의 조감도이고, 그 다이어그램은 라우팅 로직 자체의 확대판입니다.
+      </p>
+    </div>
+  </section>
+
+  <footer class="foot">
+    2026-07-03 기준 · backend/app 전체 모듈을 직접 읽고 작성 · 분야 라우팅 세부는 별도 문서 참고
+  </footer>
+
+</div>
