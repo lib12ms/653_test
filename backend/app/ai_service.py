@@ -1012,6 +1012,20 @@ _REFUSAL_RE = re.compile(
 )
 
 
+def _strip_preamble(raw: str | None) -> str:
+    """$a 앞에 붙은 AI 설명문을 제거하고 키워드 부분만 반환.
+
+    AI가 "정보 부족으로 5개를 생성할 수 없습니다.\n$a키워드1 $a키워드2" 처럼
+    응답할 때 설명문이 _REFUSAL_RE에 걸려 유효 키워드까지 버려지는 문제 방지.
+    """
+    if not raw:
+        return ""
+    idx = raw.find("$a")
+    if idx > 0:
+        return raw[idx:]
+    return raw
+
+
 def parse_keyword_line(raw: str) -> list[str]:
     """GPT 응답에서 $a… 패턴(및 백업 파싱)으로 키워드 나열."""
     pattern = re.compile(r"\$a(.*?)(?=(?:\$a|$))", re.DOTALL)
@@ -1281,6 +1295,7 @@ async def generate_653_subfield_line(
         logger.exception("OpenAI 653 호출 실패")
         return None, str(e), None, None
 
+    raw = _strip_preamble(raw)
     if _REFUSAL_RE.search(raw or ""):
         logger.warning("AI 거절 응답 감지, 1회 재시도: %.80s", raw)
         try:
@@ -1297,7 +1312,7 @@ async def generate_653_subfield_line(
                 )
             else:
                 usage = usage_retry
-        raw = raw_retry
+        raw = _strip_preamble(raw_retry)
 
     if usage is not None:
         usage.breakdown = _estimate_prompt_token_breakdown(

@@ -111,11 +111,31 @@ def _is_recent(pub_date: str, cutoff: datetime.date) -> bool:
         return False
 
 
+_TITLE_EXCLUDE = (
+    "[북토크]", "[세트]", "[전집]", "[박스]", "[큰글자]", "(큰글자)",
+    "큰글자판", "큰글자본", "[합본]", "[스페셜에디션]",
+)
+_CATEGORY_EXCLUDE = (
+    "어린이", "청소년", "유아", "아동", "잡지", "만화", "학습만화",
+)
+
+def _is_general_adult_book(item: dict) -> bool:
+    """성인 일반단행본 여부 판별 — False이면 수집에서 제외."""
+    title = (item.get("title") or "")
+    category = (item.get("categoryName") or "")
+    if any(p in title for p in _TITLE_EXCLUDE):
+        return False
+    if any(k in category for k in _CATEGORY_EXCLUDE):
+        return False
+    return True
+
+
 def collect_isbns(ttb_key: str, target: int, cutoff_days: int) -> list[dict]:
     """알라딘 신간 목록에서 target 권만큼 ISBN+기초정보를 수집.
 
     카테고리별로 균등하게 수집하되, 중복 ISBN은 제거.
     cutoff_days 이내 출판된 도서만 포함.
+    성인 일반단행본이 아닌 도서(어린이·청소년·세트·잡지 등)는 제외.
     """
     cutoff = datetime.date.today() - datetime.timedelta(days=cutoff_days)
     per_cat = max(10, (target * 2) // len(CATEGORY_CID_MAP) + 5)
@@ -140,6 +160,8 @@ def collect_isbns(ttb_key: str, target: int, cutoff_days: int) -> list[dict]:
                         continue
                     pub_date = str(it.get("pubDate") or "")
                     if not _is_recent(pub_date, cutoff):
+                        continue
+                    if not _is_general_adult_book(it):
                         continue
                     seen.add(isbn)
                     cat_books.append({
@@ -175,6 +197,8 @@ def collect_isbns(ttb_key: str, target: int, cutoff_days: int) -> list[dict]:
                         continue
                     pub_date = str(it.get("pubDate") or "")
                     if not _is_recent(pub_date, cutoff):
+                        continue
+                    if not _is_general_adult_book(it):
                         continue
                     seen.add(isbn)
                     books.append({
