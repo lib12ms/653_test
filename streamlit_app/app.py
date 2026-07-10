@@ -225,7 +225,7 @@ with tab_single:
         if not (isbn or "").strip():
             st.warning("ISBN을 입력하세요.")
         else:
-            with st.spinner("알라딘 수집 → KPIPA 목차(선택) → GPT 분석…"):
+            with st.spinner("키워드 생성중..."):
                 data, err = post_json(
                     "/api/field653",
                     {"isbn": isbn.strip()},
