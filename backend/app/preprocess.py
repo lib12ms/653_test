@@ -17,6 +17,14 @@ TITLE_DERIVED_ALLOWED_KEYWORDS = {
     "인공지능도구",
 }
 
+# forbidden에 포함된 언어명·시험명이 복합어의 접두로 쓰인 경우 차단하지 않는다.
+# 예: 제목에 "중국어"가 있어도 "중국어회화"·"중국어독해"는 구체 주제어로 허용.
+# 단, "중국어" 단독은 제목 단어이므로 exact match 차단은 그대로 유지 (원칙: 제목 단어 반복 금지).
+_ALLOWED_FORBIDDEN_PREFIXES: frozenset[str] = frozenset({
+    "중국어", "일본어", "프랑스어", "독일어", "스페인어", "러시아어",
+    "toeic", "toefl", "jlpt", "jpt", "hsk", "ielts", "topik",
+})
+
 
 def norm_text(text: str) -> str:
     if not text:
@@ -198,13 +206,15 @@ def should_keep_keyword(kw: str, forbidden: set[str]) -> bool:
         return True
     for tok in forbidden:
         tok_compact = tok.replace(" ", "")
-        # 키워드가 금지어와 정확히 일치하는 경우 차단
+        # 키워드가 금지어와 정확히 일치하는 경우 차단 (제목 단어 반복 금지 원칙)
         if compact == tok_compact:
             return False
         # 키워드가 금지어로 시작하는 경우 차단 (데미안분석·셰익스피어론 등)
         # len>=3 기준: 2자 금지어(영어·토익 등)는 startswith 허용(영어회화·토익스피킹 등 복합어 통과)
-        if len(tok_compact) >= 3 and compact.startswith(tok_compact):
-            return False
+        # 예외: 언어명·시험명이 접두로 쓰인 복합어("중국어회화", "toeic스피킹")는 구체 주제어로 허용
+        elif len(tok_compact) >= 3 and compact.startswith(tok_compact):
+            if tok_compact not in _ALLOWED_FORBIDDEN_PREFIXES:
+                return False
     return True
 
 
