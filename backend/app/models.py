@@ -25,7 +25,7 @@ class AladinMetadata653(BaseModel):
 
 
 class NlkMetadataHint(BaseModel):
-    """보강 힌트(현행 파이프라인: KPIPA에서 채우는 경우 목차 `toc`만 사용)."""
+    """보조 메타 힌트 구조체 — toc 필드만 병합 파이프라인에서 참조."""
 
     class_no: str = ""
     ea_add_code: str = ""  # ISBN 부가기호(5자리, Seoji EA_ADD_CODE) — KDC보다 실제로 채워지는 필드
@@ -87,6 +87,8 @@ class Field653Quality(BaseModel):
     """0.0~1.0 종합 품질 점수"""
     flags: list[str] = Field(default_factory=list)
     """경고 플래그 목록 (예: ['과다차단', 'fallback사용'])"""
+    fallback_keywords: list[str] = Field(default_factory=list)
+    """텍스트/카테고리 fallback으로 보충된 키워드 목록 (AI 유효 키워드 제외)"""
 
     @property
     def filter_rate(self) -> float:
@@ -105,15 +107,10 @@ class Field653Response(BaseModel):
     error: str | None = None
     token_usage: TokenUsage | None = None
     aladin: AladinMetadata653 | None = None
-    nlk_hint: NlkMetadataHint | None = None  # 응답 필드명 유지(API 호환); KPIPA 목차만 채울 수 있음
-    hint_source: str | None = Field(
-        default=None,
-        description="보강 출처: kpipa(목차 병합됨) | None",
-    )
-    kpipa_raw: dict[str, Any] | None = None
     preprocess_debug: dict[str, str] | None = None
     duration_ms: float | None = None
-    """요청 처리 소요시간(ms) — 알라딘/KPIPA/Seoji 조회 + AI 생성 전체 포함"""
+    fallback_keywords: list[str] = Field(default_factory=list)
+    """갯수 부족으로 fallback(텍스트/카테고리)에서 보충된 키워드 목록"""
 
 
 def parse_653_keywords(tag_653: str | None, *, max_keywords: int = 15) -> list[str]:

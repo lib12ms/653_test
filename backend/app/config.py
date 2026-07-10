@@ -46,15 +46,6 @@ class Settings(BaseSettings):
         default=False,
         description="NLK OpenAPI(앱 본선 파이프라인에서는 미사용; probe_nlk_isbns 등 스크립트용)",
     )
-    kpipa_api_key: str = Field(default="", description="KPIPA 출판유통통합전산망 OpenAPI 서비스키(apiKey)")
-    kpipa_api_base_url: str = Field(
-        default="https://bnk.kpipa.or.kr",
-        description="KPIPA API 베이스 URL(운영). 개발: http://49.254.92.151:8092",
-    )
-    kpipa_enable: bool = Field(
-        default=False,
-        description="KPIPA getBookDetail 호출 — ONIX 목차(TextType 04)만 알라딘 메타에 병합",
-    )
     request_timeout_s: float = 30.0
     allow_insecure_ssl_fallback: bool = Field(
         default=False,

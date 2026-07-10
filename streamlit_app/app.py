@@ -108,6 +108,7 @@ def _render_editable_653(data: dict[str, Any], key_prefix: str, isbn: str = "") 
 
     # ── 키워드 편집 ──────────────────────────────────────────────────────────
     keywords = [str(x).strip() for x in (data.get("keywords") or []) if str(x).strip()]
+    fallback_kws: set[str] = set(data.get("fallback_keywords") or [])
     default_text = "\n".join(keywords)
     state_key = f"{key_prefix}_kw_edit"
     source_key = f"{key_prefix}_kw_source"
@@ -126,6 +127,20 @@ def _render_editable_653(data: dict[str, Any], key_prefix: str, isbn: str = "") 
 
     st.markdown("#### 653 키워드")
     st.code(current_tag, language="text")
+
+    # fallback 키워드가 있으면 분홍색 배지로 표시
+    if fallback_kws:
+        badge_html = " ".join(
+            f'<span style="background:#ffe0ec;color:#c0003c;border:1px solid #f0a0b8;'
+            f'border-radius:4px;padding:2px 7px;font-size:0.85em;font-weight:600;">{kw}</span>'
+            for kw in keywords if kw in fallback_kws
+        )
+        if badge_html:
+            st.markdown(
+                f'<div style="margin:4px 0 8px 0;">🔔 <span style="font-size:0.85em;color:#888;">'
+                f'갯수 부족으로 보충된 키워드</span> {badge_html}</div>',
+                unsafe_allow_html=True,
+            )
 
     st.markdown("#### 키워드 에디터")
     st.text_area(

@@ -1,7 +1,6 @@
 """653: 전처리 + OpenAI Responses API 의미분석 + 키워드도출."""
 from __future__ import annotations
 
-import json
 import logging
 import re
 from pathlib import Path
@@ -143,9 +142,10 @@ CATEGORY_PROMPTS = {
         "유형C 인명·핵심인물 [0-1개. 제목·설명 명시 시만]\n"
         "  설명·목차에 명시된 심리학자 또는 관련 핵심 인물.\n"
         "  예) 프로이트·융·피아제·셰익스피어·밀그램\n\n"
-        "유형D 심리적 주제·증상 [0-1개]\n"
+        "유형D 심리적 주제·증상 [0-1개. 설명·목차에 해당 개념이 직접 등장 시만]\n"
         "  독자가 검색창에 실제로 입력하는 심리적 주제어.\n"
-        "  예) 트라우마·번아웃·자존감·회복탄력성·우울증·성격장애\n\n"
+        "  설명·목차에서 독자가 겪는 구체 증상·상황을 직접 찾아 쓸 것.\n"
+        "  예) 트라우마·번아웃·우울증·공황장애·강박증\n\n"
         "유형E 적용 분야 [0-1개. 설명·목차 명시 시만]\n"
         "  심리학이 특정 분야에 적용되는 경우.\n"
         "  예) 문학심리학·조직심리학·스포츠심리학·법심리학\n\n"
@@ -887,38 +887,6 @@ def _is_low_value_keyword(normalized_keyword: str, category_group: str = "") -> 
     return False
 
 
-# ── Few-shot 예시 DB ──────────────────────────────────────────────────────────
-_FEW_SHOTS_PATH = Path(__file__).parent / "few_shots.json"
-_FEW_SHOTS_CACHE: dict | None = None
-
-
-def _load_few_shots() -> dict:
-    global _FEW_SHOTS_CACHE
-    if _FEW_SHOTS_CACHE is None:
-        if _FEW_SHOTS_PATH.exists():
-            _FEW_SHOTS_CACHE = json.loads(_FEW_SHOTS_PATH.read_text(encoding="utf-8"))
-        else:
-            _FEW_SHOTS_CACHE = {}
-    return _FEW_SHOTS_CACHE
-
-
-def _build_few_shot_section(category_group: str, max_examples: int = 3) -> str:
-    """카테고리 그룹에 해당하는 few-shot 예시 텍스트를 반환한다."""
-    shots = _load_few_shots().get(category_group, [])
-    if not shots:
-        return ""
-    lines = ["[참고 예시 — 유사 도서의 사서 작성 키워드]"]
-    for ex in shots[:max_examples]:
-        kw_str = " / ".join(ex["good_keywords"])
-        lines.append(f"  분류: {ex['category']}")
-        lines.append(f"  제목: {ex['title']}")
-        lines.append(f"  → 키워드: {kw_str}")
-        if ex.get("bad_keywords"):
-            bad_str = " / ".join(ex["bad_keywords"])
-            lines.append(f"  → 제외: {bad_str}")
-        lines.append("")
-    return "\n".join(lines)
-
 
 # ── 정적 instructions (fallback·initialize_agent.py 주입용) ───────────────────
 _STATIC_INSTRUCTIONS = (
@@ -930,7 +898,7 @@ _STATIC_INSTRUCTIONS = (
     "   예) 자연과학→양자역학 / 인문학→실존주의 / 자기계발→시간관리\n"
     "3. 목적성: 이용자가 검색창에 입력할 명사만. 감상어(따뜻한·감동적) 금지.\n"
     "   판촉어(힐링·N잡러)는 검색효용 있으면 허용.\n"
-    "   사회적상황·정체성으로 치환: 위로→번아웃 / 성장→자존감\n"
+    "   감상어 치환 원칙: 설명·목차에서 독자가 실제 겪는 사회적상황·증상어를 직접 찾아 쓸 것.\n"
     "   출력 전 확인: 교보문고·예스24 검색창에 이 단어를 입력했을 때\n"
     "   비슷한 분야의 책 여러 권이 모이는가?\n"
     "   → 너무 좁으면(단일 사례·실험명) 제외 / 너무 넓으면(상위분류명 단독) 제외\n"
@@ -981,13 +949,10 @@ def _build_input(
     pub_desc_trimmed = (publisher_desc or "")[:pub_desc_max_chars]
 
     pub_section = f"- 출판사 제공 책소개: \"{pub_desc_trimmed}\"\n" if pub_desc_trimmed else ""
-    few_shot_section = _build_few_shot_section(category_group)
-    few_shot_block = f"{few_shot_section}\n" if few_shot_section else ""
 
     return (
         f"[카테고리 그룹: {category_group}]\n"
         f"[카테고리별 지침]\n{category_prompt}\n"
-        f"{few_shot_block}"
         f"### 분석 대상 도서\n"
         f"- 분류(전체 체인): \"{category}\"\n"
         f"- 분류(핵심 꼬리): \"{cat_tail}\"\n"
@@ -1195,6 +1160,7 @@ def finalize_653(
     ai_valid_count = len(valid_keywords)
     filtered_count = ai_raw_count - ai_valid_count
     backup_used = ai_valid_count == 0
+    _ai_valid_boundary = ai_valid_count  # fallback 시작 경계 (나중에 슬라이싱용)
 
     # 문학은 텍스트 토크나이즈 fallback 금지 — 5유형 비구조 토큰(주인공·서울·이야기 등)이 삽입됨
     # 카테고리 fallback(_extract_category_candidates)이 장르 대체어를 제공하므로 충분함
@@ -1265,6 +1231,9 @@ def finalize_653(
         score -= 0.10
     score = round(max(0.0, min(1.0, score)), 3)
 
+    final_list = valid_keywords[:max_keywords]
+    fallback_keywords = final_list[_ai_valid_boundary:]
+
     quality = Field653Quality(
         ai_raw_count=ai_raw_count,
         filtered_count=filtered_count,
@@ -1273,8 +1242,9 @@ def finalize_653(
         category_fallback_used=category_fallback_used,
         quality_score=score,
         flags=flags,
+        fallback_keywords=fallback_keywords,
     )
-    return "".join([f"$a{k}" for k in valid_keywords[:max_keywords]]), quality
+    return "".join([f"$a{k}" for k in final_list]), quality
 
 
 async def generate_653_subfield_line(

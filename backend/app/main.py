@@ -14,14 +14,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import ai_service
 from .config import get_settings
 from .sheets_service import diagnose_sheets, save_golden_data
-from .fetcher import fetch_aladin_for_653, fetch_secondary_metadata_hint, merge_aladin_with_nlk
+from .fetcher import fetch_aladin_for_653, merge_aladin_with_nlk
 from .nlk_client import fetch_kdc_content_code_by_isbn
 from .models import (
     AladinMetadata653,
     Field653FromIsbnRequest,
     Field653FromMetadataRequest,
     Field653Response,
-    NlkMetadataHint,
     parse_653_keywords,
 )
 
@@ -92,13 +91,10 @@ async def _build_response_from_meta(
     meta: AladinMetadata653,
     max_kw: int,
     min_kw: int,
-    nlk_hint: NlkMetadataHint | None = None,
     preprocess_debug: dict[str, str] | None = None,
     client: httpx.AsyncClient | None = None,
-    hint_source: str | None = None,
-    kpipa_raw: dict | None = None,
 ) -> Field653Response:
-    raw_line, err, token_usage, _quality = await ai_service.generate_653_subfield_line(
+    raw_line, err, token_usage, quality = await ai_service.generate_653_subfield_line(
         meta,
         max_keywords=max_kw,
         min_keywords=min_kw,
@@ -109,13 +105,11 @@ async def _build_response_from_meta(
             error=err or "653 생성 실패",
             token_usage=token_usage,
             aladin=meta,
-            nlk_hint=nlk_hint,
-            hint_source=hint_source,
-            kpipa_raw=kpipa_raw,
             preprocess_debug=preprocess_debug,
         )
     tag = ai_service.build_marc_653_line(raw_line)
     kws = parse_653_keywords(tag, max_keywords=max_kw)
+    fallback_kws = quality.fallback_keywords if quality else []
     return Field653Response(
         success=True,
         tag_653=tag,
@@ -123,16 +117,14 @@ async def _build_response_from_meta(
         raw_keyword_line=raw_line,
         token_usage=token_usage,
         aladin=meta,
-        nlk_hint=nlk_hint,
-        hint_source=hint_source,
-        kpipa_raw=kpipa_raw,
         preprocess_debug=preprocess_debug,
+        fallback_keywords=fallback_kws,
     )
 
 
 @app.post("/api/field653", response_model=Field653Response)
 async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
-    """ISBN → 알라딘(주) + KPIPA 목차(선택) → 653."""
+    """ISBN → 알라딘 → 653."""
     s = get_settings()
     http_client: httpx.AsyncClient = app.state.http_client
     cache: _TtlCache = app.state.isbn_cache
@@ -141,7 +133,6 @@ async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
         f"v{str(s.field653_cache_bundle_version).strip() or '1'}|"
         f"{req.isbn.strip()}|{s.openai_model}|"
         f"{s.max_keywords_653}|{s.min_keywords_653}|"
-        f"k{int(bool(s.kpipa_enable and s.kpipa_api_key))}|"
         f"n{int(bool(s.nlk_enable and s.nlk_api_key))}|"
         f"agent:{conv_key}"
     )
@@ -151,35 +142,23 @@ async def field653_from_isbn(req: Field653FromIsbnRequest) -> Field653Response:
 
     request_start = time.monotonic()
     try:
-        base_meta_task = fetch_aladin_for_653(
-            req.isbn, settings=s, include_debug=True, client=http_client
+        (base_meta, preprocess_debug), content_code = await asyncio.gather(
+            fetch_aladin_for_653(req.isbn, settings=s, include_debug=True, client=http_client),
+            fetch_kdc_content_code_by_isbn(req.isbn, settings=s, client=http_client),
         )
-        secondary_task = fetch_secondary_metadata_hint(req.isbn, settings=s, client=http_client)
-        content_code_task = fetch_kdc_content_code_by_isbn(req.isbn, settings=s, client=http_client)
-        (
-            (base_meta, preprocess_debug),
-            (nlk_hint, hint_src, kpipa_raw),
-            content_code,
-        ) = await asyncio.gather(base_meta_task, secondary_task, content_code_task)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.exception("알라딘 조회")
         raise HTTPException(status_code=502, detail=f"알라딘 API 오류: {e}") from e
 
-    merge_src = "kpipa" if hint_src == "kpipa" else "none"
-    meta = merge_aladin_with_nlk(
-        base_meta, nlk_hint, settings=s, secondary_source=merge_src, content_code=content_code
-    )
+    meta = merge_aladin_with_nlk(base_meta, settings=s, content_code=content_code)
     response = await _build_response_from_meta(
         meta,
         s.max_keywords_653,
         s.min_keywords_653,
-        nlk_hint=nlk_hint,
         preprocess_debug=preprocess_debug,
         client=http_client,
-        hint_source=hint_src if hint_src != "none" else None,
-        kpipa_raw=kpipa_raw,
     )
     response.duration_ms = round((time.monotonic() - request_start) * 1000, 1)
     if response.success:
