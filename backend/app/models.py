@@ -89,6 +89,10 @@ class Field653Quality(BaseModel):
     """경고 플래그 목록 (예: ['과다차단', 'fallback사용'])"""
     fallback_keywords: list[str] = Field(default_factory=list)
     """텍스트/카테고리 fallback으로 보충된 키워드 목록 (AI 유효 키워드 제외)"""
+    raw_keywords: list[str] = Field(default_factory=list)
+    """finalize_653()에 입력된 AI 생성 키워드 목록 (should_keep_keyword 통과 후)"""
+    blocked_keywords: list[str] = Field(default_factory=list)
+    """finalize_653()에서 차단된 키워드 목록 (저효용어·과잉AI·중복 포함)"""
 
     @property
     def filter_rate(self) -> float:

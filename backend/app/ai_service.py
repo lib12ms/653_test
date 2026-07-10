@@ -1153,23 +1153,29 @@ def finalize_653(
     category_group = get_category_group(category, content_code)
 
     valid_keywords: list[str] = []
+    blocked_kws: list[str] = []
     seen: set[str] = set()
     ai_topic_count = 0
     for kw in keywords:
-        if validate_keyword(kw, forbidden_set):
-            n = norm_text(kw)
-            if _is_low_value_keyword(n, category_group):
+        if not validate_keyword(kw, forbidden_set):
+            blocked_kws.append(kw)
+            continue
+        n = norm_text(kw)
+        if _is_low_value_keyword(n, category_group):
+            blocked_kws.append(kw)
+            continue
+        if not allow_bio and any(b in n for b in author_bio_like):
+            blocked_kws.append(kw)
+            continue
+        if n in seen:
+            continue  # 중복 — blocked가 아니라 무시
+        if _is_ai_topic_keyword(n):
+            if ai_topic_count >= MAX_AI_TOPIC_KEYWORDS:
+                blocked_kws.append(kw)
                 continue
-            if not allow_bio and any(b in n for b in author_bio_like):
-                continue
-            if n in seen:
-                continue
-            if _is_ai_topic_keyword(n):
-                if ai_topic_count >= MAX_AI_TOPIC_KEYWORDS:
-                    continue
-                ai_topic_count += 1
-            seen.add(n)
-            valid_keywords.append(kw.replace(" ", ""))
+            ai_topic_count += 1
+        seen.add(n)
+        valid_keywords.append(kw.replace(" ", ""))
 
     ai_valid_count = len(valid_keywords)
     filtered_count = ai_raw_count - ai_valid_count
@@ -1260,6 +1266,8 @@ def finalize_653(
         quality_score=score,
         flags=flags,
         fallback_keywords=fallback_keywords,
+        raw_keywords=keywords,
+        blocked_keywords=blocked_kws,
     )
     return "".join([f"$a{k}" for k in final_list]), quality
 

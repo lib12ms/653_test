@@ -244,6 +244,10 @@ async def process_isbn(
         "품질점수": "",
         "경고플래그": "",
         "검토필요": "",
+        "원생성키워드": "",
+        "차단키워드": "",
+        "fallback키워드": "",
+        "fallback출처": "",
         "오류": "",
     }
 
@@ -296,6 +300,15 @@ async def process_isbn(
                     or bool(quality.flags)
                 )
                 result["검토필요"] = "Y" if needs_review else "N"
+                result["원생성키워드"] = " / ".join(quality.raw_keywords)
+                result["차단키워드"] = " / ".join(quality.blocked_keywords)
+                result["fallback키워드"] = " / ".join(quality.fallback_keywords)
+                fb_sources = []
+                if "텍스트fallback사용" in quality.flags:
+                    fb_sources.append("텍스트")
+                if "카테고리fallback사용" in quality.flags:
+                    fb_sources.append("카테고리")
+                result["fallback출처"] = "+".join(fb_sources) if fb_sources else ""
 
             review_mark = " ★" if result["검토필요"] == "Y" else ""
             print(
@@ -319,6 +332,7 @@ CSV_COLUMNS = [
     "설명", "목차",
     "653필드", "키워드목록",
     "AI생성수", "차단수", "최종수", "품질점수", "경고플래그", "검토필요",
+    "원생성키워드", "차단키워드", "fallback키워드", "fallback출처",
     "오류",
 ]
 
