@@ -80,7 +80,7 @@ class Field653Quality(BaseModel):
     final_count: int = 0
     """최종 키워드 수"""
     backup_used: bool = False
-    """AI 유효 키워드가 0개여서 텍스트 fallback을 사용했는지"""
+    """AI 유효 키워드가 0개인지 여부 (텍스트 fallback 실행 여부와 무관 — 문학은 텍스트 fallback 미사용)"""
     category_fallback_used: bool = False
     """min_keywords 미달로 카테고리 fallback을 사용했는지"""
     quality_score: float = 0.0

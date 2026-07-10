@@ -1173,12 +1173,14 @@ def finalize_653(
 
     ai_valid_count = len(valid_keywords)
     filtered_count = ai_raw_count - ai_valid_count
-    backup_used = ai_valid_count == 0
+    backup_used = ai_valid_count == 0  # AI 유효 키워드가 0개인지 여부
+    text_fallback_used = False  # 실제로 텍스트 fallback이 키워드를 추가했는지
     _ai_valid_boundary = ai_valid_count  # fallback 시작 경계 (나중에 슬라이싱용)
 
     # 문학은 텍스트 토크나이즈 fallback 금지 — 5유형 비구조 토큰(주인공·서울·이야기 등)이 삽입됨
     # 카테고리 fallback(_extract_category_candidates)이 장르 대체어를 제공하므로 충분함
     if backup_used and category_group != "문학":
+        _count_before_text = len(valid_keywords)
         backup = _extract_backup_candidates(category, toc, description)
         for kw in backup:
             n = norm_text(kw)
@@ -1198,6 +1200,7 @@ def finalize_653(
             valid_keywords.append(kw)
             if len(valid_keywords) >= min_keywords:
                 break
+        text_fallback_used = len(valid_keywords) > _count_before_text
 
     _count_before_fallback = len(valid_keywords)
     if _count_before_fallback < min_keywords:
@@ -1229,7 +1232,7 @@ def finalize_653(
     filter_rate = filtered_count / ai_raw_count if ai_raw_count > 0 else 0.0
     if filter_rate > 0.5:
         flags.append("과다차단")
-    if backup_used:
+    if text_fallback_used:
         flags.append("텍스트fallback사용")
     if category_fallback_used:
         flags.append("카테고리fallback사용")
@@ -1239,7 +1242,7 @@ def finalize_653(
     score = min(final_count, max_keywords) / max(max_keywords, 1)
     if filter_rate > 0.3:
         score -= (filter_rate - 0.3) * 0.5
-    if backup_used:
+    if text_fallback_used:
         score -= 0.15
     if category_fallback_used:
         score -= 0.10
