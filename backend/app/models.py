@@ -110,6 +110,8 @@ class Field653Response(BaseModel):
     """$a... 형태(653 서브필드만, =653 접두 없음)"""
     error: str | None = None
     token_usage: TokenUsage | None = None
+    quality: Field653Quality | None = None
+    """키워드 품질 지표 (ai_raw_count, filtered_count, quality_score, flags 등)"""
     aladin: AladinMetadata653 | None = None
     preprocess_debug: dict[str, str] | None = None
     duration_ms: float | None = None

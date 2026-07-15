@@ -116,6 +116,7 @@ async def _build_response_from_meta(
         keywords=kws,
         raw_keyword_line=raw_line,
         token_usage=token_usage,
+        quality=quality,
         aladin=meta,
         preprocess_debug=preprocess_debug,
         fallback_keywords=fallback_kws,
