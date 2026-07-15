@@ -12,8 +12,8 @@ __pycache__/
 .venv/
 venv/
 
-# Streamlit/cache
-.streamlit/secrets.toml
+# Streamlit/cache — 모든 하위 폴더의 secrets.toml 제외
+**/.streamlit/secrets.toml
 
 # OS
 .DS_Store
