@@ -845,6 +845,12 @@ def _is_low_value_keyword(normalized_keyword: str, category_group: str = "") -> 
     # 개별 등록 대신 접미 전체를 차단(기존 개별 등록 항목은 중복이지만 유지)
     if compact.endswith("일반"):
         return True
+    # "~를위한X책" / "~을위한X책" 형태의 카테고리 분류 레이블 문구
+    # 예: 초보자를위한컴퓨터책, 학생을위한수학책 — 주제어가 아닌 서가분류 설명
+    if "를위한" in compact or "을위한" in compact:
+        return True
+    if len(compact) >= 6 and compact.endswith("책"):
+        return True
     if re.fullmatch(r"\d{4}년대이후.*", compact):
         return True
     if category_group == "자연과학" and compact in NATURAL_SCIENCE_LOW_VALUE_KEYWORDS:
