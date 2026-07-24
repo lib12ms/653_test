@@ -21,9 +21,6 @@ from .preprocess import (
 
 logger = logging.getLogger(__name__)
 
-# 책소개가 이 길이(문자수) 미만이면 출판사 제공 책소개를 병합해 함께 취급한다.
-DESC_MERGE_THRESHOLD_CHARS = 150
-
 
 async def fetch_aladin_for_653(
     isbn: str,
@@ -95,18 +92,10 @@ async def fetch_aladin_for_653(
             crawl_toc_filled = True
         raw_publisher_desc = crawled.get("publisher_desc", "")
 
-        # 알라딘 책소개(API/크롤링 대체분 포함)가 짧으면 출판사 제공 책소개를 병합해
-        # 함께 취급한다 — description 단독으로는 키워드 추출에 부족한 경우 보강.
-        # (예: 위스키 도감처럼 API 책소개가 2문장뿐이고 목차는 제품명 나열이라
-        #  실질적으로 유용한 내용은 출판사 책소개에만 있는 책)
-        desc_merged_with_publisher = False
-        if len(raw_desc.strip()) < DESC_MERGE_THRESHOLD_CHARS and raw_publisher_desc.strip():
-            raw_desc = "\n".join(p for p in (raw_desc.strip(), raw_publisher_desc.strip()) if p)
-            desc_merged_with_publisher = True
-
         cleaned_category = clean_category_for_ai(raw_category, s.category_remove_words)
         cleaned_desc = clean_description_for_ai(raw_desc)
         cleaned_toc = clean_toc_for_ai(raw_toc)
+        cleaned_publisher_desc = clean_description_for_ai(raw_publisher_desc)
 
         meta = AladinMetadata653(
             category=cleaned_category,
@@ -114,11 +103,7 @@ async def fetch_aladin_for_653(
             authors=clean_author_str(str(raw_author or "")),
             description=cleaned_desc.strip(),
             toc=cleaned_toc.strip(),
-            # 출판사 제공 책소개는 설명이 짧을 때만(위에서) description에 이미 병합됨.
-            # 여기서는 항상 비워둔다 — 안 그러면 _build_input()이 별도 섹션으로
-            # 한 번 더 넣어서 (a) 병합 안 된 경우에도 GPT에 전송되고 (b) 병합된
-            # 경우 내용이 두 번 들어가는 중복이 생긴다.
-            publisher_desc="",
+            publisher_desc=cleaned_publisher_desc.strip(),
         )
         if include_debug:
             dbg = {
@@ -128,11 +113,11 @@ async def fetch_aladin_for_653(
                 "description_clean": cleaned_desc[:1200],
                 "toc_raw": raw_toc[:1200],
                 "toc_clean": cleaned_toc[:1200],
-                "publisher_desc": raw_publisher_desc[:1200],
+                "publisher_desc_raw": raw_publisher_desc[:1200],
+                "publisher_desc_clean": cleaned_publisher_desc[:1200],
                 "crawl_used": str(crawl_used),
                 "crawl_desc_filled": str(crawl_desc_filled),
                 "crawl_toc_filled": str(crawl_toc_filled),
-                "desc_merged_with_publisher": str(desc_merged_with_publisher),
             }
             return meta, dbg
         return meta
@@ -286,13 +271,13 @@ async def _crawl_aladin_detail(
 
     # ── 목차: 전용 섹션 우선, 없으면 Introduce 내장 목차 ──────────────────────
     if toc_text.strip():
-        result["toc"] = toc_text[:800]
+        result["toc"] = toc_text[:4000]
     elif intro_toc:
-        result["toc"] = intro_toc[:400]
+        result["toc"] = intro_toc[:4000]
 
     # ── 출판사 제공 책소개 ─────────────────────────────────────────────────────
     pub_desc = _extract_publisher_book_intro(publisher_text)
     if pub_desc:
-        result["publisher_desc"] = pub_desc[:1500]
+        result["publisher_desc"] = pub_desc[:6000]
 
     return result

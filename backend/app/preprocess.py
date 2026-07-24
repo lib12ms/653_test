@@ -93,7 +93,7 @@ def clean_toc_for_ai(toc_text: str) -> str:
         text = text.replace(word, " ")
 
     cleaned = re.sub(r"\s+", " ", text).strip()
-    return extract_toc_major(cleaned, max_chars=300)
+    return extract_toc_major(cleaned, max_chars=2000)
 
 
 def clean_description_for_ai(description_text: str) -> str:

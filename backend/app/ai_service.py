@@ -225,7 +225,7 @@ CATEGORY_PROMPTS = {
         "  예) 마케팅전략·재무관리·창업경영·조직관리·투자금융·거시경제·행동경제학·인사관리\n\n"
         "유형B 핵심 이론·방법론 [0-1개]\n"
         "  학술·실무에서 통용되는 명칭만. 저자·도서 고유 조어 금지.\n"
-        "  예) 린스타트업·애자일경영·블루오션전략·가치투자·포트폴리오이론·OKR\n\n"
+        "  예) 린스타트업·식스시그마·블루오션전략·가치투자·포트폴리오이론·OKR\n\n"
         "유형C 산업·적용 영역 [0-1개. 설명·목차 명시 시만]\n"
         "  예) 스타트업·부동산투자·주식시장·유통산업·IT경영·글로벌경영\n\n"
         "유형D 트렌드어·신개념 [0-1개. 설명 명시 시만]\n"
@@ -943,8 +943,8 @@ def _build_input(
     max_keywords: int,
     publisher_desc: str = "",
     desc_max_chars: int = 600,
-    toc_max_chars: int = 300,
-    pub_desc_max_chars: int = 600,
+    toc_max_chars: int = 2000,
+    pub_desc_max_chars: int = 3000,
     content_code: str = "",
 ) -> str:
     """ISBN별 동적 입력 텍스트 생성."""
@@ -1193,9 +1193,10 @@ def finalize_653(
     text_fallback_used = False  # 실제로 텍스트 fallback이 키워드를 추가했는지
     _ai_valid_boundary = ai_valid_count  # fallback 시작 경계 (나중에 슬라이싱용)
 
-    # 문학은 텍스트 토크나이즈 fallback 금지 — 5유형 비구조 토큰(주인공·서울·이야기 등)이 삽입됨
-    # 카테고리 fallback(_extract_category_candidates)이 장르 대체어를 제공하므로 충분함
-    if backup_used and category_group != "문학":
+    # 문학·에세이는 텍스트 토크나이즈 fallback 금지
+    # — 줄거리·일상 서술에서 인물명·장소명·사물명 등 내용어가 주제어로 오삽입될 위험
+    # — 카테고리 fallback(_extract_category_candidates)이 장르 대체어를 제공하므로 충분함
+    if backup_used and category_group not in ("문학", "에세이"):
         _count_before_text = len(valid_keywords)
         backup = _extract_backup_candidates(category, toc, description)
         for kw in backup:
@@ -1348,7 +1349,7 @@ async def generate_653_subfield_line(
     kws = parse_keyword_line(raw)
     ai_output = "".join(f"$a{kw}" for kw in kws if should_keep_keyword(kw, forbidden))
     category_group = get_category_group(category, content_code)
-    effective_min = 3 if category_group == "문학" else min_keywords
+    effective_min = 3 if category_group in ("문학", "에세이") else min_keywords
     subfield_line, quality = finalize_653(
         ai_output,
         forbidden,
