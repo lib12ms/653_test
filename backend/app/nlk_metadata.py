@@ -141,12 +141,13 @@ def hint_from_seoji_doc(doc: dict[str, Any]) -> NlkMetadataHint:
 def content_code_from_hint(h: NlkMetadataHint) -> str:
     """NlkMetadataHint → 3자리 내용분류코드(KDC 강목 상당).
 
-    EA_ADD_CODE(5자리) 마지막 3자리를 우선 사용하고, 없으면 class_no(KDC)
-    앞 3자리로 대체한다. 유효하지 않으면 빈 문자열.
+    EA_ADD_CODE 구조: [독자대상(1)] [내용분류(3)] [발행형태(1)]
+    내용분류는 2~4번째 자리(인덱스 1:4)이다.
+    없으면 class_no(KDC) 앞 3자리로 대체한다. 유효하지 않으면 빈 문자열.
     """
     ea = (h.ea_add_code or "").strip()
     if len(ea) >= 5 and ea.isdigit():
-        return ea[-3:]
+        return ea[1:4]
     kdc = (h.class_no or "").strip()
     if len(kdc) >= 3 and kdc[:3].isdigit():
         return kdc[:3]
